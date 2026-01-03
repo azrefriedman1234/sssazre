@@ -1,7 +1,10 @@
 package com.pasiflonet.mobile.ui
 
 import android.content.Context
-import android.graphics.*
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -9,12 +12,13 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-class BlurOverlayView(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
+class BlurOverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
     var blurMode: Boolean = false
     var enabledForImage: Boolean = false
+        private set
 
-    var onRectFinished: ((RectF) -> Unit)? = null
+    var allowRectangles: Boolean = true
 
     private val rects = mutableListOf<RectF>()
     private var downX = 0f
@@ -32,20 +36,40 @@ class BlurOverlayView(context: Context, attrs: AttributeSet? = null) : View(cont
         color = Color.argb(60, 0, 200, 255)
     }
 
+    fun setEnabledForImage(v: Boolean) {
+        enabledForImage = v
+        // לא מנקים rects כדי לאפשר לוידאו להשתמש במלבנים שנצייר
+        invalidate()
+    }
+
+    fun exportRectsNormalized(): List<RectF> {
+        val w = width.coerceAtLeast(1).toFloat()
+        val h = height.coerceAtLeast(1).toFloat()
+        return rects.map {
+            RectF(
+                (it.left / w).coerceIn(0f, 1f),
+                (it.top / h).coerceIn(0f, 1f),
+                (it.right / w).coerceIn(0f, 1f),
+                (it.bottom / h).coerceIn(0f, 1f)
+            )
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         for (r in rects) {
             canvas.drawRect(r, fillPaint)
             canvas.drawRect(r, strokePaint)
         }
-        curRect?.let { r ->
-            canvas.drawRect(r, fillPaint)
-            canvas.drawRect(r, strokePaint)
+        curRect?.let {
+            canvas.drawRect(it, fillPaint)
+            canvas.drawRect(it, strokePaint)
         }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!enabledForImage || !blurMode) return false
+        if (!allowRectangles) return false
+        if (!blurMode) return false
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -56,38 +80,24 @@ class BlurOverlayView(context: Context, attrs: AttributeSet? = null) : View(cont
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                curRect?.let {
-                    it.right = event.x
-                    it.bottom = event.y
-                }
+                val r = curRect ?: return true
+                r.left = min(downX, event.x)
+                r.top = min(downY, event.y)
+                r.right = max(downX, event.x)
+                r.bottom = max(downY, event.y)
                 invalidate()
                 return true
             }
-            MotionEvent.ACTION_UP -> {
-                val r = curRect ?: return true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val r = curRect
                 curRect = null
-
-                val norm = RectF(
-                    min(r.left, r.right),
-                    min(r.top, r.bottom),
-                    max(r.left, r.right),
-                    max(r.top, r.bottom)
-                )
-
-                if (abs(norm.width()) > 12 && abs(norm.height()) > 12) {
-                    rects.add(norm)
-                    onRectFinished?.invoke(norm)
+                if (r != null && abs(r.width()) > 10 && abs(r.height()) > 10) {
+                    rects.add(r)
                 }
                 invalidate()
                 return true
             }
         }
-        return super.onTouchEvent(event)
-    }
-
-    fun clearAll() {
-        rects.clear()
-        curRect = null
-        invalidate()
+        return false
     }
 }

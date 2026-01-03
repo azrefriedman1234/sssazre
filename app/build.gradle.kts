@@ -84,8 +84,10 @@ tasks.matching { it.name == "preBuild" }.configureEach {
 }
 
 dependencies {
+    // ML Kit (on-device translate)
     implementation("com.google.mlkit:language-id:17.0.6")
     implementation("com.google.mlkit:translate:17.0.3")
+
     implementation(files("libs/td-1.8.56.aar"))
     implementation(files("libs/ffmpeg-kit-full-gpl-6.0-2.LTS.aar"))
 
@@ -106,9 +108,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // ML Kit (free, on-device models; no API key)
-    implementation("com.google.mlkit:language-id:17.0.5")
-    implementation("com.google.mlkit:translate:17.0.2")
-
     // Image loading
     implementation("io.coil-kt:coil:2.6.0")
 
