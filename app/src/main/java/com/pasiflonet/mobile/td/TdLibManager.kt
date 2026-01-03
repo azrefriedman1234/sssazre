@@ -26,40 +26,30 @@ object TdLibManager {
         if (client != null) return
 
         val updatesHandler = Client.ResultHandler { obj ->
-            // keep auth state updated
             if (obj is TdApi.UpdateAuthorizationState) {
                 _authState.value = obj.authorizationState
             }
 
-            // forward ONLY updates to listeners
-            val name = obj.javaClass.simpleName
-            if (name.startsWith("Update")) {
-                for (l in updateListeners) {
-                    runCatching { l(obj) }
-                }
+            // forward all TDLib Updates to listeners
+            if (obj.javaClass.simpleName.startsWith("Update")) {
+                for (l in updateListeners) runCatching { l(obj) }
             }
         }
 
-        val exceptionHandler = Client.ExceptionHandler { e ->
-            e.printStackTrace()
-        }
+        val exceptionHandler = Client.ExceptionHandler { e -> e.printStackTrace() }
 
-        client = Client.create(updatesHandler, exceptionHandler, exceptionHandler)
+        // IMPORTANT: second arg is a ResultHandler (we ignore global results; per-send callbacks still work)
+        client = Client.create(updatesHandler, Client.ResultHandler { }, exceptionHandler)
 
-        // helpful defaults
         send(TdApi.SetLogVerbosityLevel(1)) { }
         send(TdApi.GetAuthorizationState()) { }
         send(TdApi.SetOption("online", TdApi.OptionValueBoolean(true))) { }
     }
 
-    fun addUpdateListener(l: (TdApi.Object) -> Unit) {
-        updateListeners.add(l)
-    }
+    fun addUpdateListener(l: (TdApi.Object) -> Unit) { updateListeners.add(l) }
+    fun removeUpdateListener(l: (TdApi.Object) -> Unit) { updateListeners.remove(l) }
 
-    fun removeUpdateListener(l: (TdApi.Object) -> Unit) {
-        updateListeners.remove(l)
-    }
-
+    // IMPORTANT: Function MUST have a type argument
     fun send(f: TdApi.Function<out TdApi.Object>, cb: (TdApi.Object) -> Unit = {}) {
         val c = client ?: return
         c.send(f) { obj -> cb(obj) }
