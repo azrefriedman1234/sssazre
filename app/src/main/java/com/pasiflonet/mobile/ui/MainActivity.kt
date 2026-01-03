@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -28,7 +29,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: MessagesAdapter
 
     private val mediaPermLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+
+    private val updateListener: (TdApi.Object) -> Unit = { obj ->
+        if (obj !is TdApi.UpdateNewMessage) return@let
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,11 +42,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.btnSettings)
             .setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
-        requestMediaPermissionsIfNeeded()
-
-        TdLibManager.init(this)
-        TdLibManager.ensureClient()
-        TdLibManager.send(TdApi.GetAuthorizationState()) { }
+        requestMediaPermissions()
 
         recycler = findViewById(R.id.recycler)
         btnClearTemp = findViewById(R.id.btnClearTemp)
@@ -53,7 +54,7 @@ class MainActivity : AppCompatActivity() {
                 chatId = m.chatId,
                 msgId = m.msgId,
                 text = m.text,
-                mediaUri = null,                 // worker יביא מהטלגרם לפי chatId/msgId אם צריך
+                mediaUri = null,
                 mediaMime = m.mediaMime,
                 miniThumbB64 = m.miniThumbB64,
                 hasMediaHint = m.hasMedia
@@ -63,10 +64,52 @@ class MainActivity : AppCompatActivity() {
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
 
-        btnExit.setOnClickListener { finish() }
-        btnClearTemp.setOnClickListener { /* אפשר להוסיף ניקוי cache בהמשך */ }
+        // שורת בדיקה כדי לוודא שהטבלה עובדת
+        adapter.prepend(
+            UiMsg(
+                chatId = 0L,
+                msgId = 0L,
+                dateSec = (System.currentTimeMillis() / 1000L).toInt(),
+                from = "system",
+                text = "מוכן. מחכה להודעות בלייב…"
+            )
+        )
 
-        // ✅ AUTH -> אם לא READY אז הולכים למסך Login
+        btnExit.setOnClickListener { finish() }
+
+        TdLibManager.init(this)
+        TdLibManager.ensureClient()
+
+        // listener אמיתי ל-UpdateNewMessage
+        TdLibManager.addUpdateListener { u ->
+            if (u !is TdApi.UpdateNewMessage) return@addUpdateListener
+            val msg = u.message
+
+            val from = when (val s = msg.senderId) {
+                is TdApi.MessageSenderUser -> "user:${s.userId}"
+                is TdApi.MessageSenderChat -> "chat:${s.chatId}"
+                else -> "?"
+            }
+
+            val (text, hasMedia, mime, miniThumb) = extractUiFields(msg)
+
+            Log.d("MainActivity", "UpdateNewMessage chat=${msg.chatId} id=${msg.id}")
+
+            val ui = UiMsg(
+                chatId = msg.chatId,
+                msgId = msg.id,
+                dateSec = msg.date,
+                from = from,
+                text = text,
+                hasMedia = hasMedia,
+                mediaMime = mime,
+                miniThumbB64 = miniThumb
+            )
+
+            runOnUiThread { adapter.prepend(ui) }
+        }
+
+        // אם לא READY -> מעביר ללוגין
         lifecycleScope.launch {
             TdLibManager.authState.collect { st ->
                 if (st == null) return@collect
@@ -76,39 +119,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
-        // ✅ LIVE UPDATES -> UpdateNewMessage -> לטבלה (לא מפסיק)
-        lifecycleScope.launch {
-            TdLibManager.updates.collect { obj ->
-                if (obj.constructor != TdApi.UpdateNewMessage.CONSTRUCTOR) return@collect
-                val up = obj as TdApi.UpdateNewMessage
-                val msg = up.message
-
-                val from = when (val s = msg.senderId) {
-                    is TdApi.MessageSenderUser -> "user:${s.userId}"
-                    is TdApi.MessageSenderChat -> "chat:${s.chatId}"
-                    else -> "?"
-                }
-
-                val (text, hasMedia, mime, miniThumb) = extractUiFields(msg)
-
-                val ui = UiMsg(
-                    chatId = msg.chatId,
-                    msgId = msg.id,
-                    dateSec = msg.date,
-                    from = from,
-                    text = text,
-                    hasMedia = hasMedia,
-                    mediaMime = mime,
-                    miniThumbB64 = miniThumb
-                )
-
-                adapter.prepend(ui)
-            }
-        }
     }
 
-    private fun requestMediaPermissionsIfNeeded() {
+    override fun onDestroy() {
+        super.onDestroy()
+        runCatching { TdLibManager.removeUpdateListener(updateListener) }
+    }
+
+    private fun requestMediaPermissions() {
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= 33) {
             perms += Manifest.permission.READ_MEDIA_IMAGES
@@ -119,6 +137,8 @@ class MainActivity : AppCompatActivity() {
         val need = perms.any { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
         if (need) mediaPermLauncher.launch(perms.toTypedArray())
     }
+
+    private data class Quad(val text: String, val hasMedia: Boolean, val mime: String?, val miniThumbB64: String?)
 
     private fun extractUiFields(msg: TdApi.Message): Quad {
         val c = msg.content ?: return Quad("(empty)", false, null, null)
@@ -131,6 +151,7 @@ class MainActivity : AppCompatActivity() {
             is TdApi.MessageDocument -> (c.caption?.text?.takeIf { it.isNotBlank() } ?: "[DOCUMENT]")
             else -> "[${c.javaClass.simpleName.uppercase(Locale.ROOT)}]"
         }
+
         if (text.length > 2000) text = text.take(2000) + "…"
 
         val hasMedia = c.constructor != TdApi.MessageText.CONSTRUCTOR
@@ -154,11 +175,4 @@ class MainActivity : AppCompatActivity() {
         val miniThumbB64 = TdThumb.extractMiniThumbB64(carrier)
         return Quad(text, hasMedia, mime, miniThumbB64)
     }
-
-    private data class Quad(
-        val text: String,
-        val hasMedia: Boolean,
-        val mime: String?,
-        val miniThumbB64: String?
-    )
 }
