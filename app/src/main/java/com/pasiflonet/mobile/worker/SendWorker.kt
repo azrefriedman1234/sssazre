@@ -68,7 +68,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val caption = TdApi.FormattedText(text, null)
 
         // 2) If no media -> send text
-        if (!sendWithMedia || mediaUriStr.isBlank()) {
+        if (!sendWithMedia) {
             val content = TdApi.InputMessageText().apply {
                 this.text = caption
                 this.linkPreviewOptions = null
@@ -78,7 +78,43 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         }
 
         // 3) Media path from content:// -> local cache file
-        val inUri = runCatching { Uri.parse(mediaUriStr) }.getOrNull() ?: return Result.failure()
+        
+        // If no media_uri was provided, download original media from source message via TDLib
+        if (mediaUriStr.isBlank()) {
+            val fb = fallbackDownloadFromSourceMessage(srcChatId, srcMsgId) ?: return Result.failure()
+            val localIn = fb.first
+            val effMime = if (mediaMime.isBlank()) fb.second else mediaMime
+            val isVideo = fb.third
+
+            val finalFile = if (isVideo && blurRectsStr.isNotBlank()) {
+                blurVideo(localIn, blurRectsStr) ?: localIn
+            } else {
+                localIn
+            }
+
+            val inputFile = TdApi.InputFileLocal(finalFile.absolutePath)
+            val caption = TdApi.FormattedText(text, null)
+
+            val content: TdApi.InputMessageContent = when {
+                effMime.lowercase(Locale.ROOT).startsWith("image/") -> TdApi.InputMessagePhoto().apply {
+                    this.photo = inputFile
+                    this.caption = caption
+                }
+                effMime.lowercase(Locale.ROOT).startsWith("video/") -> TdApi.InputMessageVideo().apply {
+                    this.video = inputFile
+                    this.caption = caption
+                    this.supportsStreaming = true
+                }
+                else -> TdApi.InputMessageDocument().apply {
+                    this.document = inputFile
+                    this.caption = caption
+                }
+            }
+
+            return sendContent(targetChatId, content)
+        }
+
+val inUri = runCatching { Uri.parse(mediaUriStr) }.getOrNull() ?: return Result.failure()
         val localIn = copyUriToCache(inUri, mediaMime) ?: return Result.failure()
 
         // 4) If video and blur rects exist -> produce edited output via ffmpeg
@@ -235,4 +271,90 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
             null
         }
     }
+
+    private fun fallbackDownloadFromSourceMessage(srcChatId: Long, srcMsgId: Long): Triple<File, String, Boolean>? {
+        // returns (localFile, mime, isVideo)
+        val latch = CountDownLatch(1)
+        var out: Triple<File, String, Boolean>? = null
+
+        TdLibManager.send(TdApi.GetMessage(srcChatId, srcMsgId)) { obj ->
+            try {
+                if (obj.constructor != TdApi.Message.CONSTRUCTOR) {
+                    latch.countDown()
+                    return@send
+                }
+                val msg = obj as TdApi.Message
+                val c = msg.content
+
+                var file: TdApi.File? = null
+                var mime = ""
+                var isVideo = false
+
+                when (c) {
+                    is TdApi.MessagePhoto -> {
+                        val sizes = c.photo?.sizes
+                        val best = sizes?.lastOrNull()
+                        file = best?.photo
+                        mime = "image/jpeg"
+                    }
+                    is TdApi.MessageVideo -> {
+                        file = c.video?.video
+                        mime = c.video?.mimeType ?: "video/mp4"
+                        isVideo = true
+                    }
+                    is TdApi.MessageAnimation -> {
+                        file = c.animation?.animation
+                        mime = c.animation?.mimeType ?: "video/mp4"
+                        isVideo = true
+                    }
+                    is TdApi.MessageDocument -> {
+                        file = c.document?.document
+                        mime = c.document?.mimeType ?: ""
+                    }
+                }
+
+                if (file == null) {
+                    latch.countDown()
+                    return@send
+                }
+
+                val dlLatch = CountDownLatch(1)
+                var localPath: String? = null
+
+                // synchronous=true כדי לקבל path מוכן
+                TdLibManager.send(TdApi.DownloadFile(file!!.id, 32, 0, 0, true)) { obj2 ->
+                    try {
+                        if (obj2.constructor == TdApi.File.CONSTRUCTOR) {
+                            val f2 = obj2 as TdApi.File
+                            val pth = f2.local?.path
+                            if (!pth.isNullOrBlank()) localPath = pth
+                        }
+                    } finally {
+                        dlLatch.countDown()
+                    }
+                }
+
+                dlLatch.await(90, TimeUnit.SECONDS)
+                val lp = localPath
+                if (lp.isNullOrBlank()) {
+                    latch.countDown()
+                    return@send
+                }
+
+                val fLocal = File(lp)
+                if (!fLocal.exists()) {
+                    latch.countDown()
+                    return@send
+                }
+
+                out = Triple(fLocal, mime, isVideo)
+            } finally {
+                latch.countDown()
+            }
+        }
+
+        if (!latch.await(90, TimeUnit.SECONDS)) return null
+        return out
+    }
+
 }
