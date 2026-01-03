@@ -18,9 +18,7 @@ object TdLibManager {
 
     private val updateListeners = CopyOnWriteArrayList<(TdApi.Object) -> Unit>()
 
-    fun init(ctx: Context) {
-        appCtx = ctx.applicationContext
-    }
+    fun init(ctx: Context) { appCtx = ctx.applicationContext }
 
     fun ensureClient() {
         if (client != null) return
@@ -30,7 +28,7 @@ object TdLibManager {
                 _authState.value = obj.authorizationState
             }
 
-            // forward all TDLib Updates to listeners
+            // מפיץ כל Update ל-UI
             if (obj.javaClass.simpleName.startsWith("Update")) {
                 for (l in updateListeners) runCatching { l(obj) }
             }
@@ -38,8 +36,8 @@ object TdLibManager {
 
         val exceptionHandler = Client.ExceptionHandler { e -> e.printStackTrace() }
 
-        // IMPORTANT: second arg is a ResultHandler (we ignore global results; per-send callbacks still work)
-        client = Client.create(updatesHandler, Client.ResultHandler { }, exceptionHandler)
+        // ✅ זה הפיקס: arg2+arg3 הם ExceptionHandler
+        client = Client.create(updatesHandler, exceptionHandler, exceptionHandler)
 
         send(TdApi.SetLogVerbosityLevel(1)) { }
         send(TdApi.GetAuthorizationState()) { }
@@ -49,9 +47,9 @@ object TdLibManager {
     fun addUpdateListener(l: (TdApi.Object) -> Unit) { updateListeners.add(l) }
     fun removeUpdateListener(l: (TdApi.Object) -> Unit) { updateListeners.remove(l) }
 
-    // IMPORTANT: Function MUST have a type argument
+    // ✅ Function חייב generic
     fun send(f: TdApi.Function<out TdApi.Object>, cb: (TdApi.Object) -> Unit = {}) {
         val c = client ?: return
-        c.send(f) { obj -> cb(obj) }
+        c.send(f, Client.ResultHandler { obj -> cb(obj) })
     }
 }

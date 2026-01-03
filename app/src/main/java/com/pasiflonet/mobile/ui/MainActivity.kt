@@ -26,10 +26,9 @@ class MainActivity : AppCompatActivity() {
     private val mediaPermLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
-    // שמור רפרנס כדי שנוכל להסיר ב-onDestroy
     private val newMsgListener: (TdApi.Object) -> Unit = { obj ->
-        if (obj !is TdApi.UpdateNewMessage) return@newMsgListener
-        val msg = obj.message
+        val up = obj as? TdApi.UpdateNewMessage ?: return
+        val msg = up.message
 
         val from = when (val s = msg.senderId) {
             is TdApi.MessageSenderUser -> "user:${s.userId}"
@@ -67,14 +66,13 @@ class MainActivity : AppCompatActivity() {
 
         recycler = findViewById(R.id.recycler)
         adapter = MessagesAdapter { m ->
-            // נשאר עם ה-start הקיים אצלך (לא שובר)
             DetailsActivity.start(this, m.chatId, m.msgId, m.text)
         }
 
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
 
-        // שורת בדיקה כדי לראות מיד שהטבלה עובדת
+        // שורת בדיקה שתראה שהטבלה עובדת
         adapter.prepend(
             UiMsg(
                 chatId = 0L,
@@ -89,7 +87,6 @@ class MainActivity : AppCompatActivity() {
         TdLibManager.ensureClient()
         TdLibManager.addUpdateListener(newMsgListener)
 
-        // אם לא READY → לוגין
         lifecycleScope.launch {
             TdLibManager.authState.collect { st ->
                 if (st == null) return@collect
