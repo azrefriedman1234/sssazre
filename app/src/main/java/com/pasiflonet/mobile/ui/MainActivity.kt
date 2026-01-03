@@ -98,7 +98,7 @@ TdLibManager.init(this)
         }
 
         lifecycleScope.launch {
-            TdLibManager.updates.collectLatest { obj ->
+            TdLibManager.updatesFlow.collect { obj ->
                 if (obj == null) return@collectLatest
                 if (obj.constructor != TdApi.UpdateNewMessage.CONSTRUCTOR) return@collectLatest
 
