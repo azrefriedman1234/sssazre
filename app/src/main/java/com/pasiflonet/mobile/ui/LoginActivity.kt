@@ -50,7 +50,7 @@ class LoginActivity : AppCompatActivity() {
             if (apiId != 0) b.etApiId.setText(apiId.toString())
             if (apiHash.isNotBlank()) b.etApiHash.setText(apiHash)
             if (phone.isNotBlank()) b.etPhone.setText(phone)
-            if (targetChat != 0L) b.etTargetChatId.setText(targetChat.toString())
+            if (targetChat != 0L) b.etTargetUsername.setText(targetChat.toString())
             if (wm.isNotBlank()) watermarkUri = Uri.parse(wm)
         }
 
@@ -63,7 +63,7 @@ class LoginActivity : AppCompatActivity() {
                 val apiId = b.etApiId.text?.toString()?.trim()?.toIntOrNull() ?: 0
                 val apiHash = b.etApiHash.text?.toString()?.trim().orEmpty()
                 val phone = b.etPhone.text?.toString()?.trim().orEmpty()
-                val target = b.etTargetChatId.text?.toString()?.trim()?.toLongOrNull() ?: 0L
+                val target = b.etTargetUsername.text?.toString()?.trim()?.toLongOrNull() ?: 0L
 
                 if (apiId == 0 || apiHash.isBlank() || phone.isBlank()) {
                     Snackbar.make(b.root, "חובה למלא API ID / HASH ומספר טלפון", Snackbar.LENGTH_LONG).show()
