@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun seedRecentMessages() {
         lifecycleScope.launch(Dispatchers.IO) {
-            TdLibManager.send(TdApi.GetChats(0, 0, 100)) { obj ->
+            TdLibManager.send(TdApi.GetChats(TdApi.ChatListMain(), 100)) { obj ->
                 if (obj.constructor != TdApi.Chats.CONSTRUCTOR) return@send
                 val chats = (obj as TdApi.Chats).chatIds ?: return@send
                 chats.forEach { chatId ->
@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
                 TdMediaDownloader.downloadFile(thumbId, priority = 8, synchronous = true)
             } else null
 
-            val row = TdMessageMapper.mapToRow(chatId, msg, thumbPath)
+            val row = TdMessageMapper.mapToRow(chatId, msg, thumbPath, null)
             runOnUiThread {
                 adapter.prepend(row)
                 adapter.trimTo(100)

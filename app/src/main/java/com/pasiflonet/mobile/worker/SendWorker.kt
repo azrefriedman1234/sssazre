@@ -29,7 +29,8 @@ class SendWorker(
 ) : CoroutineWorker(ctx, params) {
 
     companion object {
-        private const val TAG = "SendWorker"
+                const val KEY_TARGET_USERNAME = "target_username"
+private const val TAG = "SendWorker"
 
         const val KEY_SRC_CHAT_ID = "src_chat_id"
         const val KEY_SRC_MESSAGE_ID = "src_message_id"
