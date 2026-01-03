@@ -1,6 +1,7 @@
 package com.pasiflonet.mobile.ui
 
 import android.view.MenuItem
+import com.pasiflonet.mobile.util.TdThumb
 import android.view.Menu
 import android.Manifest
 import androidx.activity.result.contract.ActivityResultContracts
