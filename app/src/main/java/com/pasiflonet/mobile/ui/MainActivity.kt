@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // ניקוי זמני בלי למחוק session של TDLib
-        b.btnCleanTmp.setOnClickListener {
+        b.btnClearTemp.setOnClickListener {
             val n = TempCleaner.clean(applicationContext)
             Snackbar.make(b.root, "✅ נמחקו קבצים זמניים: $n", Snackbar.LENGTH_SHORT).show()
         }
