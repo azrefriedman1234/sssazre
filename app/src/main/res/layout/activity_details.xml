@@ -5,110 +5,144 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:padding="12dp"
     android:background="@color/md_theme_background">
 
-    <TextView
-        android:id="@+id/tvMeta"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="פרטים"
-        android:textSize="16sp"
-        android:textColor="@color/md_theme_onSurface"
-        android:padding="12dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/tilMessage"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="12dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintTop_toBottomOf="@id/tvMeta"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etMessage"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minLines="3"
-            android:gravity="top|start"
-            android:textColor="@android:color/white"
-            android:hint="טקסט ההודעה"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/tilTranslation"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="12dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintTop_toBottomOf="@id/tilMessage"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etTranslation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minLines="2"
-            android:gravity="top|start"
-            android:textColor="@android:color/white"
-            android:hint="תרגום (אוטומטי / ידני)"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <FrameLayout
-        android:id="@+id/previewBox"
+    <!-- Preview / Editor (Left, tall) -->
+    <com.pasiflonet.mobile.ui.editor.OverlayEditorView
+        android:id="@+id/editorView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_margin="12dp"
+        android:layout_marginEnd="10dp"
         android:background="@color/md_theme_surface"
-        app:layout_constraintTop_toBottomOf="@id/tilTranslation"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/actionsRow">
-
-        <com.pasiflonet.mobile.ui.overlay.EditOverlayView
-            android:id="@+id/overlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-    </FrameLayout>
-
-    <LinearLayout
-        android:id="@+id/actionsRow"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_margin="12dp"
-        android:orientation="horizontal"
+        app:layout_constraintEnd_toStartOf="@+id/rightPanel"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintWidth_percent="0.46" />
 
-        <RadioButton
-            android:id="@+id/rbWithMedia"
-            android:layout_width="0dp"
+    <!-- Right panel -->
+    <LinearLayout
+        android:id="@+id/rightPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        app:layout_constraintStart_toEndOf="@+id/editorView"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <TextView
+            android:id="@+id/tvMeta"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
+            android:text="מטא"
+            android:textColor="@color/md_theme_onSurface"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="טקסט הודעה (ניתן לעריכה)"
+            app:boxBackgroundMode="outline"
+            app:boxStrokeColor="@color/md_theme_onSurface">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minLines="4"
+                android:textColor="@android:color/white"
+                android:textColorHint="#99FFFFFF"
+                android:inputType="textMultiLine"
+                android:gravity="top|start"/>
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:hint="תרגום אוטומטי (חינם, on-device)"
+            app:boxBackgroundMode="outline"
+            app:boxStrokeColor="@color/md_theme_onSurface">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etTranslation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minLines="3"
+                android:textColor="@android:color/white"
+                android:textColorHint="#99FFFFFF"
+                android:inputType="textMultiLine"
+                android:gravity="top|start"/>
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Editor controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="10dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWatermark"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="הוסף לוגו" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBlur"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="טשטוש" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnClearEdits"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="נקה עריכות" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTranslate"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="תרגם עכשיו" />
+        </LinearLayout>
+
+        <!-- Send options -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/swSendWithMedia"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
             android:text="שלח עם מדיה"
-            android:textColor="@android:color/white"/>
-
-        <RadioButton
-            android:id="@+id/rbNoMedia"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:checked="true"
-            android:text="שלח בלי מדיה"
-            android:textColor="@android:color/white"/>
+            android:textColor="@color/md_theme_onSurface"
+            android:checked="true"/>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSend"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="שלח" />
+            android:text="שלח הודעה"
+            android:layout_marginTop="10dp"/>
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
