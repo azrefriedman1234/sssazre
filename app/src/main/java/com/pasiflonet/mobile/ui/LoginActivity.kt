@@ -33,15 +33,15 @@ class LoginActivity : AppCompatActivity() {
         b = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        // FORCE_SHOW_LOGIN: always show code box + login button
-        b.boxCode.visibility = View.VISIBLE
-        b.btnLogin.visibility = View.VISIBLE
-        b.btnLogin.text = "התחברות"
-
         prefs = AppPrefs(this)
 
         TdLibManager.init(applicationContext)
         TdLibManager.ensureClient()
+
+        // ✅ בכוונה: תמיד להציג אזור קוד + כפתור התחברות כדי שלא "ייעלם"
+        b.boxCode.visibility = View.VISIBLE
+        b.btnLogin.visibility = View.VISIBLE
+        b.btnLogin.text = "התחברות"
 
         // אם כבר מחובר – לעבור ישר לטבלה
         lifecycleScope.launch {
@@ -54,15 +54,11 @@ class LoginActivity : AppCompatActivity() {
             }
         }
 
-        // showInitialUi() disabled (always show login controls)
-
         b.btnPickWatermark.setOnClickListener {
             pickWatermark.launch("image/*")
         }
 
         b.btnSendCode.setOnClickListener {
-            // UI: להציג תמיד אזור קוד + כפתור התחברות מיד
-            showCodeUi()
             val apiIdStr = b.etApiId.text?.toString()?.trim().orEmpty()
             val apiHash = b.etApiHash.text?.toString()?.trim().orEmpty()
             val phone = b.etPhone.text?.toString()?.trim().orEmpty()
@@ -84,14 +80,14 @@ class LoginActivity : AppCompatActivity() {
             }
 
             lifecycleScope.launch {
-                // AppPrefs אצלך שומר apiId כ-String -> נשמור את apiIdStr
+                // שמירה ל-AppPrefs (apiId נשמר כ-String אצלך)
                 prefs.saveApiId(apiIdStr)
                 prefs.saveApiHash(apiHash)
                 prefs.savePhone(phone)
                 prefs.saveTargetUsername(targetUsername)
                 if (watermarkUri.isNotBlank()) prefs.saveWatermark(watermarkUri)
 
-                // חתימה תואמת ל-TDLib שלך (14 פרמטרים, בלי enableStorageOptimizer)
+                // חתימה נכונה ל-TDLib 1.8.56 (14 פרמטרים)
                 val params = TdApi.SetTdlibParameters(
                     false,
                     filesDir.absolutePath + "/tdlib",
@@ -109,7 +105,6 @@ class LoginActivity : AppCompatActivity() {
                 TdLibManager.send(params) { _ -> }
                 TdLibManager.send(TdApi.SetAuthenticationPhoneNumber(phone, null)) { _ -> }
 
-                showCodeUi()
                 Snackbar.make(b.root, "✅ קוד אימות נשלח", Snackbar.LENGTH_SHORT).show()
             }
         }
@@ -129,18 +124,7 @@ class LoginActivity : AppCompatActivity() {
                     TdLibManager.send(TdApi.CheckAuthenticationPassword(pass)) { _ -> }
                 }
                 Snackbar.make(b.root, "מתחבר…", Snackbar.LENGTH_SHORT).show()
-                // המעבר לטבלה יקרה אוטומטית כשה-authState יהפוך ל-READY (ה-collectLatest למעלה)
             }
         }
-    }
-
-    private fun // showInitialUi() disabled (always show login controls) {
-        b.boxCode.visibility = View.GONE
-        b.btnLogin.visibility = View.GONE
-    }
-
-    private fun showCodeUi() {
-        b.boxCode.visibility = View.VISIBLE
-        b.btnLogin.visibility = View.VISIBLE
     }
 }
