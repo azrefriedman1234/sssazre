@@ -81,7 +81,7 @@ class LoginActivity : AppCompatActivity() {
 
             lifecycleScope.launch {
                 // שמירה (suspend) בתוך coroutine
-                prefs.saveApiId(apiId)
+                prefs.saveApiId(apiIdStr)
                 prefs.saveApiHash(apiHash)
                 prefs.savePhone(phone)
                 prefs.saveTargetUsername(targetUsername)
@@ -94,6 +94,14 @@ class LoginActivity : AppCompatActivity() {
                         filesDir.absolutePath + "/tdlib",
                         filesDir.absolutePath + "/tdlib",
                         ByteArray(0),
+                        false, false, false, false,
+                        apiId,
+                        apiHash,
+                        "he",
+                        android.os.Build.MODEL ?: "Android",
+                        android.os.Build.VERSION.RELEASE ?: "0",
+                        "1.0"
+                    ),
                         false, false, false, false,
                         apiId,
                         apiHash,
