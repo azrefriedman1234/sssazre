@@ -40,6 +40,8 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val sendWithMedia = inputData.getBoolean(KEY_SEND_WITH_MEDIA, false)
         val mediaUriStr = inputData.getString(KEY_MEDIA_URI).orEmpty().trim()
         val mediaMime = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
+        val mimeFromUri = runCatching { applicationContext.contentResolver.getType(Uri.parse(mediaUriStr)) }.getOrNull().orEmpty()
+        val effMime = if (mediaMime.isBlank()) mimeFromUri else mediaMime
         val blurRectsStr = inputData.getString(KEY_BLUR_RECTS).orEmpty().trim()
         val watermarkUriStr = inputData.getString(KEY_WATERMARK_URI).orEmpty().trim()
 
@@ -80,7 +82,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val localIn = copyUriToCache(inUri, mediaMime) ?: return Result.failure()
 
         // 4) If video and blur rects exist -> produce edited output via ffmpeg
-        val finalFile = if (mediaMime.lowercase(Locale.ROOT).startsWith("video/") && blurRectsStr.isNotBlank()) {
+        val finalFile = if (effMime.lowercase(Locale.ROOT).startsWith("video/") && blurRectsStr.isNotBlank()) {
             blurVideo(localIn, blurRectsStr) ?: localIn
         } else {
             localIn
@@ -90,13 +92,13 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val inputFile = TdApi.InputFileLocal(finalFile.absolutePath)
 
         val content: TdApi.InputMessageContent = when {
-            mediaMime.lowercase(Locale.ROOT).startsWith("image/") -> {
+            effMime.lowercase(Locale.ROOT).startsWith("image/") -> {
                 TdApi.InputMessagePhoto().apply {
                     this.photo = inputFile
                     this.caption = caption
                 }
             }
-            mediaMime.lowercase(Locale.ROOT).startsWith("video/") -> {
+            effMime.lowercase(Locale.ROOT).startsWith("video/") -> {
                 TdApi.InputMessageVideo().apply {
                     this.video = inputFile
                     this.caption = caption
