@@ -1,101 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="12dp"
-    android:background="@color/md_theme_background">
+    android:background="#0B0F14"
+    android:padding="10dp">
 
-    <!-- Preview / Editor (Left, tall) -->
-    <com.pasiflonet.mobile.ui.editor.OverlayEditorView
-        android:id="@+id/editorView"
+    <!-- LEFT: Tall preview -->
+    <FrameLayout
+        android:id="@+id/previewContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginEnd="10dp"
-        android:background="@color/md_theme_surface"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@+id/rightPanel"
+        android:background="#111821"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintWidth_percent="0.46" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/rightPanel"
+        app:layout_constraintWidth_percent="0.48">
 
-    <!-- Right panel -->
+        <ImageView
+            android:id="@+id/imgPreview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:contentDescription="preview"/>
+
+        <com.pasiflonet.mobile.util.BlurOverlayView
+            android:id="@+id/overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </FrameLayout>
+
+    <!-- RIGHT: editor / actions -->
     <LinearLayout
         android:id="@+id/rightPanel"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:orientation="vertical"
-        app:layout_constraintStart_toEndOf="@+id/editorView"
-        app:layout_constraintEnd_toEndOf="parent"
+        android:paddingStart="10dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/previewContainer">
 
         <TextView
             android:id="@+id/tvMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="מטא"
-            android:textColor="@color/md_theme_onSurface"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+            android:text="Meta"
+            android:textColor="#B3FFFFFF"
+            android:textSize="13sp"
+            android:paddingBottom="8dp" />
 
-        <com.google.android.material.textfield.TextInputLayout
+        <EditText
+            android:id="@+id/etCaption"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="טקסט הודעה (ניתן לעריכה)"
-            app:boxBackgroundMode="outline"
-            app:boxStrokeColor="@color/md_theme_onSurface">
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="top|start"
+            android:background="#141B22"
+            android:padding="12dp"
+            android:textColor="#FFFFFF"
+            android:hintTextColor="#80FFFFFF"
+            android:hint="טקסט להודעה / תיאור"
+            android:inputType="textMultiLine"
+            android:minLines="6" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etMessage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minLines="4"
-                android:textColor="@android:color/white"
-                android:textColorHint="#99FFFFFF"
-                android:inputType="textMultiLine"
-                android:gravity="top|start"/>
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:hint="תרגום אוטומטי (חינם, on-device)"
-            app:boxBackgroundMode="outline"
-            app:boxStrokeColor="@color/md_theme_onSurface">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etTranslation"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minLines="3"
-                android:textColor="@android:color/white"
-                android:textColorHint="#99FFFFFF"
-                android:inputType="textMultiLine"
-                android:gravity="top|start"/>
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- Editor controls -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginTop="10dp">
 
-            <com.google.android.material.button.MaterialButton
+            <Button
                 android:id="@+id/btnWatermark"
-                style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="הוסף לוגו" />
+                android:text="לוגו/סימן מים" />
 
-            <com.google.android.material.button.MaterialButton
+            <Button
                 android:id="@+id/btnBlur"
-                style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
@@ -109,40 +96,22 @@
             android:orientation="horizontal"
             android:layout_marginTop="8dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnClearEdits"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+            <Button
+                android:id="@+id/btnTranslate"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="נקה עריכות" />
+                android:text="תרגום חינם" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnTranslate"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+            <Button
+                android:id="@+id/btnSend"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:text="תרגם עכשיו" />
+                android:text="שלח לערוץ" />
         </LinearLayout>
 
-        <!-- Send options -->
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/swSendWithMedia"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="שלח עם מדיה"
-            android:textColor="@color/md_theme_onSurface"
-            android:checked="true"/>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSend"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="שלח הודעה"
-            android:layout_marginTop="10dp"/>
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
