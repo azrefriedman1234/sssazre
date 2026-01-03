@@ -72,7 +72,7 @@ TdLibManager.init(this)
         btnExit = findViewById(R.id.btnExit)
 
         adapter = MessagesAdapter { m ->
-            DetailsActivity.start(this, m.chatId, m.msgId, m.text)
+            DetailsActivity.start(this, m.chatId, m.msgId, m.text, m.mediaUri, m.mediaMime, m.miniThumbB64)
         }
 
         recycler.layoutManager = LinearLayoutManager(this)
