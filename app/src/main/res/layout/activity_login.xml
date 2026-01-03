@@ -1,201 +1,182 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:background="@color/md_theme_background">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="16dp">
+        android:orientation="vertical"
+        android:padding="18dp">
 
-        <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/tvTitle"
-            android:layout_width="0dp"
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="פסיפלונט מובייל"
+            android:textColor="@android:color/white"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:gravity="center"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            android:paddingBottom="12dp" />
 
-        <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/tvStatus"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="מצב: ממתין…"
-            android:layout_marginTop="8dp"
-            app:layout_constraintTop_toBottomOf="@id/tvTitle"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
-
-        <com.google.android.material.progressindicator.LinearProgressIndicator
-            android:id="@+id/progress"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:indeterminate="true"
-            android:visibility="gone"
-            app:layout_constraintTop_toBottomOf="@id/tvStatus"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
-
+        <!-- API ID -->
         <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilApiId"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
             android:hint="API ID"
-            app:layout_constraintTop_toBottomOf="@id/progress"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
+            app:boxBackgroundMode="outline"
+            app:boxStrokeColor="#66FFFFFF"
+            app:hintTextColor="#CCFFFFFF"
+            android:layout_marginTop="8dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etApiId"
-                style="@style/PasiflonetTextInputEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number"/>
+                android:inputType="number"
+                android:textColor="@android:color/white"
+                android:textColorHint="#CCFFFFFF" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- API HASH -->
         <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilApiHash"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
             android:hint="API HASH"
-            app:layout_constraintTop_toBottomOf="@id/tilApiId"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
+            app:boxBackgroundMode="outline"
+            app:boxStrokeColor="#66FFFFFF"
+            app:hintTextColor="#CCFFFFFF"
+            android:layout_marginTop="10dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etApiHash"
-                style="@style/PasiflonetTextInputEditText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text"/>
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilPhone"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:hint="מספר טלפון (כולל +972)"
-            app:layout_constraintTop_toBottomOf="@id/tilApiHash"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etPhone"
-                style="@style/PasiflonetTextInputEditText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="phone"/>
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- יעד כ-@username (שומרים את ה-id etTargetChatId כדי שה-binding בקוד יעבוד בלי לשבור) -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilTargetChat"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:hint="ערוץ יעד (@username) או t.me/username"
-            app:layout_constraintTop_toBottomOf="@id/tilPhone"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etTargetChatId"
-                style="@style/PasiflonetTextInputEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="text"
-                android:textDirection="ltr"
-                android:singleLine="true"/>
+                android:textColor="@android:color/white"
+                android:textColorHint="#CCFFFFFF" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Phone -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="מספר טלפון (כולל +972...)"
+            app:boxBackgroundMode="outline"
+            app:boxStrokeColor="#66FFFFFF"
+            app:hintTextColor="#CCFFFFFF"
+            android:layout_marginTop="10dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etPhone"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="phone"
+                android:textColor="@android:color/white"
+                android:textColorHint="#CCFFFFFF" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Target channel username -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="ערוץ יעד (@username)"
+            app:boxBackgroundMode="outline"
+            app:boxStrokeColor="#66FFFFFF"
+            app:hintTextColor="#CCFFFFFF"
+            android:layout_marginTop="10dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etTargetUsername"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:textColor="@android:color/white"
+                android:textColorHint="#CCFFFFFF" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Watermark -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPickWatermark"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="בחר סימן מים מהגלריה"
-            android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/tilTargetChat"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            android:layout_marginTop="14dp"
+            app:cornerRadius="14dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSaveSettings"
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/tvWatermarkStatus"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="שמירת הגדרות"
-            android:layout_marginTop="8dp"
-            app:layout_constraintTop_toBottomOf="@id/btnPickWatermark"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            android:text="לא נטען סימן מים"
+            android:textColor="#CCFFFFFF"
+            android:paddingTop="6dp"
+            android:paddingBottom="10dp" />
 
+        <!-- Send code -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSendCode"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="שלח קוד אימות"
-            android:layout_marginTop="8dp"
-            app:layout_constraintTop_toBottomOf="@id/btnSaveSettings"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:cornerRadius="14dp" />
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilCode"
-            android:layout_width="0dp"
+        <!-- Code box (hidden until send code) -->
+        <LinearLayout
+            android:id="@+id/boxCode"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="קוד אימות"
-            app:layout_constraintTop_toBottomOf="@id/btnSendCode"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
+            android:orientation="vertical"
+            android:layout_marginTop="14dp"
+            android:visibility="gone">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etCode"
-                style="@style/PasiflonetTextInputEditText"
+            <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number"/>
-        </com.google.android.material.textfield.TextInputLayout>
+                android:hint="קוד אימות"
+                app:boxBackgroundMode="outline"
+                app:boxStrokeColor="#66FFFFFF"
+                app:hintTextColor="#CCFFFFFF">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til2fa"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:hint="סיסמת אימות דו־שלבי (אם צריך)"
-            app:layout_constraintTop_toBottomOf="@id/tilCode"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etCode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:textColor="@android:color/white"
+                    android:textColorHint="#CCFFFFFF" />
+            </com.google.android.material.textfield.TextInputLayout>
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etTwoFa"
-                style="@style/PasiflonetTextInputEditText"
+            <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="textPassword"/>
-        </com.google.android.material.textfield.TextInputLayout>
+                android:hint="סיסמת אימות דו-שלבי (אם יש)"
+                app:boxBackgroundMode="outline"
+                app:boxStrokeColor="#66FFFFFF"
+                app:hintTextColor="#CCFFFFFF"
+                android:layout_marginTop="10dp">
 
-        <!-- זה הכפתור שחסר לך – עכשיו הוא תמיד יופיע, ואם המסך קטן פשוט גוללים -->
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etPassword"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textPassword"
+                    android:textColor="@android:color/white"
+                    android:textColorHint="#CCFFFFFF" />
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
+
+        <!-- Login -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLogin"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="התחבר / אמת"
-            android:layout_marginTop="10dp"
-            app:layout_constraintTop_toBottomOf="@id/til2fa"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"/>
+            android:text="התחברות"
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            app:cornerRadius="14dp" />
 
-    </androidx.constraintlayout.widget.ConstraintLayout>
-</androidx.core.widget.NestedScrollView>
+    </LinearLayout>
+</ScrollView>
