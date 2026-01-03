@@ -88,7 +88,7 @@ TdLibManager.init(this)
 
         lifecycleScope.launch {
             TdLibManager.authState.collectLatest { st ->
-                if (st == null) return@collectLatest
+                if (st == null) return@collectLatestLatest
                 if (st.constructor != TdApi.AuthorizationStateReady.CONSTRUCTOR) {
                     // אם אין READY — הולכים ללוגין
                     startActivity(Intent(this@MainActivity, LoginActivity::class.java))
@@ -99,17 +99,17 @@ TdLibManager.init(this)
 
         lifecycleScope.launch {
             TdLibManager.updatesFlow.collect { obj ->
-                if (obj == null) return@collectLatest
-                if (obj.constructor != TdApi.UpdateNewMessage.CONSTRUCTOR) return@collectLatest
+                if (obj == null) return@collectLatestLatest
+                if (obj.constructor != TdApi.UpdateNewMessage.CONSTRUCTOR) return@collectLatestLatest
 
                 val up = obj as TdApi.UpdateNewMessage
-                val msg = up.message ?: return@collectLatest
+                val msg = up.message ?: return@collectLatestLatest
 
                 // רק הודעות שנכנסו אחרי פתיחת האפליקציה
-                if (msg.date < startSec) return@collectLatest
+                if (msg.date < startSec) return@collectLatestLatest
 
                 val text = extractText(msg)
-                if (text.isBlank()) return@collectLatest
+                if (text.isBlank()) return@collectLatestLatest
 
                 val ui = UiMsg(
                     chatId = msg.chatId,
