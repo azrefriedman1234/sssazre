@@ -118,7 +118,7 @@ class DetailsActivity : AppCompatActivity() {
                     )
 
                     // שליחה אמיתית עם בדיקת Error/Message
-                    TdLibManager.send(TdApi.SendMessage(chat.id, 0L, null, null, input)) { res ->
+                    TdLibManager.send(TdApi.SendMessage(chat.id, null, null, null, null, input)) { res ->
                         runOnUiThread {
                             when (res) {
                                 is TdApi.Error -> Snackbar.make(b.root, "❌ לא נשלח: ${res.code} ${res.message}", Snackbar.LENGTH_LONG).show()
