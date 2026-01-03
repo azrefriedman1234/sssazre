@@ -3,34 +3,29 @@ package com.pasiflonet.mobile.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.snackbar.Snackbar
 import com.pasiflonet.mobile.data.AppPrefs
 import com.pasiflonet.mobile.databinding.ActivityLoginBinding
-import com.pasiflonet.mobile.td.TdAuthController
 import com.pasiflonet.mobile.td.TdLibManager
-import kotlinx.coroutines.
 import kotlinx.coroutines.flow.collectLatest
-flow.first
-import kotlinx.coroutines.
-import kotlinx.coroutines.flow.collectLatest
-launch
+import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 
 class LoginActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityLoginBinding
     private lateinit var prefs: AppPrefs
-    private lateinit var auth: TdAuthController
+
+    private var watermarkUri: String = ""
 
     private val pickWatermark = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
-            lifecycleScope.launch {
-                prefs.saveWatermarkUri(uri.toString())
-                Snackbar.make(b.root, "✅ סימן מים נשמר", Snackbar.LENGTH_SHORT).show()
-            }
+            watermarkUri = uri.toString()
+            b.tvWatermarkStatus.text = "✅ נטען סימן מים"
         }
     }
 
@@ -39,120 +34,110 @@ class LoginActivity : AppCompatActivity() {
         b = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        
-        // אם כבר מחובר (TDLib READY) – לא להציג מסך התחברות שוב
+        prefs = AppPrefs(this)
+
+        // TDLib init
         TdLibManager.init(applicationContext)
         TdLibManager.ensureClient()
-        TdLibManager.send(org.drinkless.tdlib.TdApi.GetAuthorizationState()) { }
+        TdLibManager.send(TdApi.GetAuthorizationState()) { }
+
+        // אם כבר READY -> ישר לטבלה (לא להציג שוב התחברות)
         lifecycleScope.launch {
             TdLibManager.authState.collectLatest { st ->
-                if (st != null && st.constructor == org.drinkless.tdlib.TdApi.AuthorizationStateReady.CONSTRUCTOR) {
-                    startActivity(android.content.Intent(this@LoginActivity, MainActivity::class.java))
-                    finish()
-                }
-            }
-        }
-
-prefs = AppPrefs(this)
-        TdLibManager.init(applicationContext)
-        auth = TdAuthController(this, prefs, lifecycleScope)
-
-        // Prefill
-        lifecycleScope.launch {
-            b.etApiId.setText(prefs.apiIdFlow.first())
-            b.etApiHash.setText(prefs.apiHashFlow.first())
-            b.etPhone.setText(prefs.phoneFlow.first())
-            val tu = prefs.targetUsernameFlow.first()
-            b.etTargetChatId.setText(if (tu.isNotBlank()) "@$tu" else "")
-        }
-
-        // אם כבר מחובר - קופץ ישר לראשי
-        lifecycleScope.launch {
-            TdLibManager.authState.collect { st ->
-                updateUiByAuthState(st)
                 if (st != null && st.constructor == TdApi.AuthorizationStateReady.CONSTRUCTOR) {
-                    prefs.setLoggedIn(true)
                     startActivity(Intent(this@LoginActivity, MainActivity::class.java))
                     finish()
                 }
             }
         }
 
-        auth.start()
+        // UI initial
+        showInitialUi()
 
-        b.btnPickWatermark.setOnClickListener { pickWatermark.launch("image/*") }
-
-        b.btnSaveSettings.setOnClickListener {
-            lifecycleScope.launch {
-                val apiId = b.etApiId.text?.toString()?.trim().orEmpty()
-                val apiHash = b.etApiHash.text?.toString()?.trim().orEmpty()
-                val phone = b.etPhone.text?.toString()?.trim().orEmpty()
-                val targetUserRaw = b.etTargetChatId.text?.toString()?.trim().orEmpty()
-
-                prefs.saveApiId(apiId)
-                prefs.saveApiHash(apiHash)
-                prefs.savePhone(phone)
-                prefs.saveTargetUsername(cleanUsername(targetUserRaw))
-
-                Snackbar.make(b.root, "✅ הגדרות נשמרו", Snackbar.LENGTH_SHORT).show()
-            }
+        b.btnPickWatermark.setOnClickListener {
+            pickWatermark.launch("image/*")
         }
 
         b.btnSendCode.setOnClickListener {
+            val apiIdStr = b.etApiId.text?.toString()?.trim().orEmpty()
+            val apiHash = b.etApiHash.text?.toString()?.trim().orEmpty()
+            val phone = b.etPhone.text?.toString()?.trim().orEmpty()
+            val targetUsername = b.etTargetUsername.text?.toString()?.trim().orEmpty()
+
+            if (apiIdStr.isBlank() || apiHash.isBlank() || phone.isBlank() || targetUsername.isBlank()) {
+                Snackbar.make(b.root, "חובה למלא API ID / API HASH / טלפון / ערוץ יעד (@username)", Snackbar.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (!targetUsername.startsWith("@")) {
+                Snackbar.make(b.root, "ערוץ יעד חייב להתחיל ב-@", Snackbar.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+
+            val apiId = apiIdStr.toIntOrNull()
+            if (apiId == null) {
+                Snackbar.make(b.root, "API ID חייב להיות מספר", Snackbar.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+
             lifecycleScope.launch {
-                val apiIdStr = b.etApiId.text?.toString()?.trim().orEmpty()
-                val apiHash = b.etApiHash.text?.toString()?.trim().orEmpty()
-                val phone = b.etPhone.text?.toString()?.trim().orEmpty()
-
-                val apiId = apiIdStr.toIntOrNull()
-                if (apiId == null || apiHash.isBlank() || phone.isBlank()) {
-                    Snackbar.make(b.root, "חובה למלא API ID, API HASH ומספר טלפון", Snackbar.LENGTH_LONG).show()
-                    return@launch
-                }
-
-                // שמירה
-                prefs.saveApiId(apiIdStr)
+                // שמירה (suspend) בתוך coroutine
+                prefs.saveApiId(apiId)
                 prefs.saveApiHash(apiHash)
                 prefs.savePhone(phone)
+                prefs.saveTargetUsername(targetUsername)
+                if (watermarkUri.isNotBlank()) prefs.saveWatermark(watermarkUri)
 
                 // הגדרת TDLib + שליחת קוד
-                auth.setTdLibParameters(apiId, apiHash)
-                auth.setPhoneNumber(phone)
+                TdLibManager.send(
+                    TdApi.SetTdlibParameters(
+                        false,
+                        filesDir.absolutePath + "/tdlib",
+                        filesDir.absolutePath + "/tdlib",
+                        ByteArray(0),
+                        false, false, false, false,
+                        apiId,
+                        apiHash,
+                        "Android",
+                        android.os.Build.MODEL ?: "Android",
+                        android.os.Build.VERSION.RELEASE ?: "0",
+                        "1.0",
+                        true
+                    )
+                ) { }
 
-                Snackbar.make(b.root, "📨 נשלח קוד אימות", Snackbar.LENGTH_SHORT).show()
+                TdLibManager.send(TdApi.SetAuthenticationPhoneNumber(phone, null)) { }
+
+                showCodeUi()
+                Snackbar.make(b.root, "✅ קוד אימות נשלח", Snackbar.LENGTH_SHORT).show()
             }
         }
 
-        // כפתור “התחבר / אמת” אחרי הזנת קוד (וגם 2FA אם צריך)
         b.btnLogin.setOnClickListener {
             val code = b.etCode.text?.toString()?.trim().orEmpty()
-            val pass = b.etTwoFa.text?.toString()?.trim().orEmpty()
+            val pass = b.etPassword.text?.toString()?.trim().orEmpty()
 
-            if (code.isNotBlank()) auth.checkCode(code)
-            if (pass.isNotBlank()) auth.checkPassword(pass)
+            if (code.isBlank()) {
+                Snackbar.make(b.root, "חובה להזין קוד אימות", Snackbar.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
 
-            if (code.isBlank() && pass.isBlank()) {
-                Snackbar.make(b.root, "הכנס קוד או סיסמת 2FA ואז לחץ התחבר", Snackbar.LENGTH_LONG).show()
+            lifecycleScope.launch {
+                TdLibManager.send(TdApi.CheckAuthenticationCode(code)) { }
+                if (pass.isNotBlank()) {
+                    TdLibManager.send(TdApi.CheckAuthenticationPassword(pass)) { }
+                }
+                Snackbar.make(b.root, "מתחבר…", Snackbar.LENGTH_SHORT).show()
             }
         }
     }
 
-    private fun updateUiByAuthState(st: TdApi.AuthorizationState?) {
-        val text = when (st?.constructor) {
-            TdApi.AuthorizationStateWaitTdlibParameters.CONSTRUCTOR -> "מצב: הזן API ואז שלח קוד"
-            TdApi.AuthorizationStateWaitPhoneNumber.CONSTRUCTOR -> "מצב: שלח מספר טלפון"
-            TdApi.AuthorizationStateWaitCode.CONSTRUCTOR -> "מצב: הזן קוד ולחץ התחבר"
-            TdApi.AuthorizationStateWaitPassword.CONSTRUCTOR -> "מצב: הזן סיסמת 2FA ולחץ התחבר"
-            TdApi.AuthorizationStateReady.CONSTRUCTOR -> "מצב: מחובר ✅"
-            else -> "מצב: ממתין…"
-        }
-        b.tvStatus.text = text
+    private fun showInitialUi() {
+        b.boxCode.visibility = View.GONE
+        b.btnLogin.visibility = View.GONE
     }
 
-    private fun cleanUsername(raw: String): String {
-        var s = raw.trim()
-        s = s.removePrefix("https://t.me/").removePrefix("http://t.me/").removePrefix("t.me/")
-        if (s.startsWith("@")) s = s.substring(1)
-        return s.trim()
+    private fun showCodeUi() {
+        b.boxCode.visibility = View.VISIBLE
+        b.btnLogin.visibility = View.VISIBLE
     }
 }
