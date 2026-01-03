@@ -27,6 +27,11 @@
             android:adjustViewBounds="true"
             android:scaleType="fitCenter"
             android:contentDescription="@null" />
+        <com.pasiflonet.mobile.ui.BlurOverlayView
+            android:id="@+id/blurOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
 
         <!-- Blur overlay draws rectangles -->
         

@@ -71,6 +71,12 @@ class DetailsActivity : AppCompatActivity() {
 
         loadPreview()
 
+        // Blur rectangles -> apply on bitmap (images only)
+        blurOverlay.onRectFinalized = { viewRect ->
+            applyBlurRect(viewRect)
+        }
+
+
         // Buttons
         findViewById<View>(R.id.btnWatermark).setOnClickListener { applyWatermarkIfPossible() }
         findViewById<View>(R.id.btnBlur).setOnClickListener { toggleBlurMode() }
@@ -121,6 +127,62 @@ class DetailsActivity : AppCompatActivity() {
                 if (input == null) return null
                 BitmapFactory.decodeStream(input)
             }
+
+    private fun applyBlurRect(viewRect: android.graphics.RectF) {
+        val bmp = workingBitmap ?: return
+        if (!blurOverlay.enabledForImage) return
+
+        // Map view rect -> bitmap rect using ImageView matrix
+        val dr = ivPreview.drawable ?: return
+        val imgRect = android.graphics.RectF(0f, 0f, dr.intrinsicWidth.toFloat(), dr.intrinsicHeight.toFloat())
+        val m = android.graphics.Matrix(ivPreview.imageMatrix)
+        val drawn = android.graphics.RectF(imgRect)
+        m.mapRect(drawn)
+
+        // Intersection (only what's on-screen)
+        val inter = android.graphics.RectF()
+        val ok = inter.setIntersect(drawn, viewRect)
+        if (!ok) return
+
+        // Convert to bitmap coords
+        val inv = android.graphics.Matrix()
+        if (!m.invert(inv)) return
+        val bmpRect = android.graphics.RectF(inter)
+        inv.mapRect(bmpRect)
+
+        val l = bmpRect.left.toInt().coerceIn(0, bmp.width - 1)
+        val t = bmpRect.top.toInt().coerceIn(0, bmp.height - 1)
+        val r = bmpRect.right.toInt().coerceIn(l + 1, bmp.width)
+        val b = bmpRect.bottom.toInt().coerceIn(t + 1, bmp.height)
+
+        // Pixelate (fast + stable) instead of heavy blur
+        pixelateRegion(bmp, l, t, r, b, block = 16)
+        ivPreview.invalidate()
+    }
+
+    private fun pixelateRegion(bmp: android.graphics.Bitmap, l: Int, t: Int, r: Int, b: Int, block: Int) {
+        val w = r - l
+        val h = b - t
+        if (w <= 2 || h <= 2) return
+
+        val blockSize = block.coerceAtLeast(6)
+        val src = android.graphics.Rect(l, t, r, b)
+
+        // scale down then scale up -> pixelation
+        val smallW = (w / blockSize).coerceAtLeast(1)
+        val smallH = (h / blockSize).coerceAtLeast(1)
+
+        val region = android.graphics.Bitmap.createBitmap(bmp, l, t, w, h)
+        val small = android.graphics.Bitmap.createScaledBitmap(region, smallW, smallH, false)
+        val big = android.graphics.Bitmap.createScaledBitmap(small, w, h, false)
+
+        val c = android.graphics.Canvas(bmp)
+        c.drawBitmap(big, null, src, null)
+
+        region.recycle()
+        small.recycle()
+        big.recycle()
+    }
         } catch (_: Throwable) {
             null
         }
@@ -209,7 +271,9 @@ class DetailsActivity : AppCompatActivity() {
             .putLong(SendWorker.KEY_SRC_MESSAGE_ID, srcMsgId)
             .putString(SendWorker.KEY_TARGET_USERNAME, target)
             .putString(SendWorker.KEY_TEXT, text)
-            .putBoolean(SendWorker.KEY_SEND_WITH_MEDIA, false)
+            .putBoolean(SendWorker.KEY_SEND_WITH_MEDIA, mediaUri != null)
+              .putString(SendWorker.KEY_MEDIA_URI, mediaUri?.toString() ?: "")
+              .putString(SendWorker.KEY_MEDIA_MIME, mediaMime ?: "")
             .build()
 
         val req = OneTimeWorkRequestBuilder<SendWorker>()
@@ -220,234 +284,4 @@ class DetailsActivity : AppCompatActivity() {
         Snackbar.make(ivPreview, "✅ נשלח לתור שליחה (WorkManager). בדוק בערוץ יעד.", Snackbar.LENGTH_LONG).show()
     }
 
-    /**
-     * Overlay that allows drawing blur rectangles over the preview.
-     * For images only: when a rectangle is finished, we apply blur on bitmap area.
-     */
-    class BlurOverlayView(context: android.content.Context, attrs: android.util.AttributeSet?) : View(context, attrs) {
-
-        var blurMode: Boolean = false
-        var enabledForImage: Boolean = false
-            private set
-
-        private val rects = mutableListOf<RectF>()
-        private var downX = 0f
-        private var downY = 0f
-        private var curRect: RectF? = null
-
-        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 4f
-            color = Color.argb(220, 0, 200, 255)
-        }
-
-        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-            color = Color.argb(60, 0, 200, 255)
-        }
-
-        fun setEnabledForImage(v: Boolean) {
-            enabledForImage = v
-            if (!v) {
-                blurMode = false
-                rects.clear()
-                curRect = null
-                invalidate()
-            }
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            for (r in rects) {
-                canvas.drawRect(r, fillPaint)
-                canvas.drawRect(r, strokePaint)
-            }
-            curRect?.let {
-                canvas.drawRect(it, fillPaint)
-                canvas.drawRect(it, strokePaint)
-            }
-        }
-
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-            if (!blurMode || !enabledForImage) return false
-
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.x
-                    downY = event.y
-                    curRect = RectF(downX, downY, downX, downY)
-                    invalidate()
-                    return true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    curRect?.let {
-                        it.right = event.x
-                        it.bottom = event.y
-                        normalize(it)
-                        invalidate()
-                    }
-                    return true
-                }
-                MotionEvent.ACTION_UP -> {
-                    curRect?.let {
-                        normalize(it)
-                        if (it.width() > 20 && it.height() > 20) rects.add(RectF(it))
-                    }
-                    curRect = null
-                    invalidate()
-
-                    // Apply blur on activity bitmap (best-effort via parent traversal)
-                    // We call back to activity by walking up the context.
-                    val act = context as? DetailsActivity
-                    act?.applyBlurRects(rects.map { RectF(it) })
-
-                    return true
-                }
-            }
-            return false
-        }
-
-        private fun normalize(r: RectF) {
-            val l = min(r.left, r.right)
-            val t = min(r.top, r.bottom)
-            val rr = max(r.left, r.right)
-            val bb = max(r.top, r.bottom)
-            r.set(l, t, rr, bb)
-        }
-    }
-
-    private fun applyBlurRects(viewRects: List<RectF>) {
-        val bmp = workingBitmap ?: return
-        if (viewRects.isEmpty()) return
-
-        // Map overlay rects (view coords) -> bitmap coords (ImageView fitCenter)
-        val mapped = mapViewRectsToBitmap(ivPreview, bmp, viewRects)
-        if (mapped.isEmpty()) return
-
-        val out = bmp.copy(Bitmap.Config.ARGB_8888, true)
-        for (r in mapped) {
-            boxBlurRect(out, r, radius = 12)
-        }
-        workingBitmap = out
-        ivPreview.setImageBitmap(out)
-        Snackbar.make(ivPreview, "✅ טשטוש הוחל (לתמונה)", Snackbar.LENGTH_SHORT).show()
-    }
-
-    private fun mapViewRectsToBitmap(iv: ImageView, bmp: Bitmap, viewRects: List<RectF>): List<Rect> {
-        val d = iv.drawable ?: return emptyList()
-
-        // Compute how drawable is fitted into ImageView (fitCenter)
-        val ivW = iv.width.toFloat()
-        val ivH = iv.height.toFloat()
-        if (ivW <= 0f || ivH <= 0f) return emptyList()
-
-        val dw = d.intrinsicWidth.toFloat()
-        val dh = d.intrinsicHeight.toFloat()
-        if (dw <= 0f || dh <= 0f) return emptyList()
-
-        val scale = min(ivW / dw, ivH / dh)
-        val drawnW = dw * scale
-        val drawnH = dh * scale
-        val left = (ivW - drawnW) / 2f
-        val top = (ivH - drawnH) / 2f
-
-        fun toBmpX(x: Float): Int = ((x - left) / scale).toInt()
-        fun toBmpY(y: Float): Int = ((y - top) / scale).toInt()
-
-        val rects = mutableListOf<Rect>()
-        for (vr in viewRects) {
-            val x1 = toBmpX(vr.left)
-            val y1 = toBmpY(vr.top)
-            val x2 = toBmpX(vr.right)
-            val y2 = toBmpY(vr.bottom)
-
-            val l = x1.coerceIn(0, bmp.width - 1)
-            val t = y1.coerceIn(0, bmp.height - 1)
-            val r = x2.coerceIn(0, bmp.width)
-            val b = y2.coerceIn(0, bmp.height)
-
-            if (r > l && b > t) rects.add(Rect(l, t, r, b))
-        }
-        return rects
-    }
-
-    /**
-     * Simple box blur on a rectangular area. CPU-only, safe, works on Bitmap ARGB_8888.
-     */
-    private fun boxBlurRect(bmp: Bitmap, rect: Rect, radius: Int) {
-        val r = radius.coerceIn(2, 32)
-        val w = rect.width()
-        val h = rect.height()
-        if (w < 2 || h < 2) return
-
-        val pixels = IntArray(w * h)
-        bmp.getPixels(pixels, 0, w, rect.left, rect.top, w, h)
-
-        // horizontal pass
-        val tmp = IntArray(w * h)
-        for (y in 0 until h) {
-            var aSum = 0; var rSum = 0; var gSum = 0; var bSum = 0
-            for (x in -r..r) {
-                val xx = x.coerceIn(0, w - 1)
-                val c = pixels[y * w + xx]
-                aSum += (c ushr 24) and 255
-                rSum += (c ushr 16) and 255
-                gSum += (c ushr 8) and 255
-                bSum += (c) and 255
-            }
-            for (x in 0 until w) {
-                val idx = y * w + x
-                val div = (2 * r + 1)
-                val a = aSum / div
-                val rr = rSum / div
-                val gg = gSum / div
-                val bb = bSum / div
-                tmp[idx] = (a shl 24) or (rr shl 16) or (gg shl 8) or bb
-
-                // slide window
-                val xOut = (x - r).coerceIn(0, w - 1)
-                val xIn = (x + r + 1).coerceIn(0, w - 1)
-                val cOut = pixels[y * w + xOut]
-                val cIn = pixels[y * w + xIn]
-                aSum += ((cIn ushr 24) and 255) - ((cOut ushr 24) and 255)
-                rSum += ((cIn ushr 16) and 255) - ((cOut ushr 16) and 255)
-                gSum += ((cIn ushr 8) and 255) - ((cOut ushr 8) and 255)
-                bSum += (cIn and 255) - (cOut and 255)
-            }
-        }
-
-        // vertical pass
-        val out = IntArray(w * h)
-        for (x in 0 until w) {
-            var aSum = 0; var rSum = 0; var gSum = 0; var bSum = 0
-            for (y in -r..r) {
-                val yy = y.coerceIn(0, h - 1)
-                val c = tmp[yy * w + x]
-                aSum += (c ushr 24) and 255
-                rSum += (c ushr 16) and 255
-                gSum += (c ushr 8) and 255
-                bSum += (c) and 255
-            }
-            for (y in 0 until h) {
-                val idx = y * w + x
-                val div = (2 * r + 1)
-                val a = aSum / div
-                val rr = rSum / div
-                val gg = gSum / div
-                val bb = bSum / div
-                out[idx] = (a shl 24) or (rr shl 16) or (gg shl 8) or bb
-
-                val yOut = (y - r).coerceIn(0, h - 1)
-                val yIn = (y + r + 1).coerceIn(0, h - 1)
-                val cOut = tmp[yOut * w + x]
-                val cIn = tmp[yIn * w + x]
-                aSum += ((cIn ushr 24) and 255) - ((cOut ushr 24) and 255)
-                rSum += ((cIn ushr 16) and 255) - ((cOut ushr 16) and 255)
-                gSum += ((cIn ushr 8) and 255) - ((cOut ushr 8) and 255)
-                bSum += (cIn and 255) - (cOut and 255)
-            }
-        }
-
-        bmp.setPixels(out, 0, w, rect.left, rect.top, w, h)
-    }
-}
+    

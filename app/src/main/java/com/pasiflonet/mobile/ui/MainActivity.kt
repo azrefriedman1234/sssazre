@@ -1,5 +1,8 @@
 package com.pasiflonet.mobile.ui
 
+import android.Manifest
+import androidx.activity.result.contract.ActivityResultContracts
+import android.os.Build
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
@@ -16,7 +19,33 @@ import org.drinkless.tdlib.TdApi
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var recycler: RecyclerView
+    
+
+    private val mediaPermLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+            // לא חייבים לעשות כלום; רק נרצה שהמשתמש אישר פעם אחת
+            getSharedPreferences("pf_prefs", MODE_PRIVATE).edit()
+                .putBoolean("media_perm_asked", true).apply()
+        }
+
+    private fun requestMediaPermissionsIfFirstRun() {
+        val sp = getSharedPreferences("pf_prefs", MODE_PRIVATE)
+        if (sp.getBoolean("media_perm_asked", false)) return
+
+        val perms = if (Build.VERSION.SDK_INT >= 33) {
+            arrayOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_AUDIO
+            )
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+        mediaPermLauncher.launch(perms)
+    }
+
+private lateinit var recycler: RecyclerView
     private lateinit var btnClearTemp: Button
     private lateinit var btnExit: Button
 
@@ -27,7 +56,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        TdLibManager.init(this)
+        
+        requestMediaPermissionsIfFirstRun()
+TdLibManager.init(this)
         TdLibManager.ensureClient()
         TdLibManager.send(TdApi.GetAuthorizationState()) { }
 
