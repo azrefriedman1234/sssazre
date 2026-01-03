@@ -5,50 +5,52 @@ import org.drinkless.tdlib.TdApi
 
 object TdThumb {
 
-    private fun extractMiniBytes(anyMedia: Any?): ByteArray? {
-        if (anyMedia == null) return null
+    fun miniThumbB64(msg: TdApi.Message): String? {
+        val c = msg.content ?: return null
 
-        // TDLib generators vary: minithumbnail / miniThumbnail / etc.
-        val candidates = listOf("minithumbnail", "miniThumbnail", "mini_thumb", "miniThumb", "miniThumbnail")
+        val holders = ArrayList<Any?>()
+        when (c) {
+            is TdApi.MessagePhoto -> holders += c.photo
+            is TdApi.MessageVideo -> holders += c.video
+            is TdApi.MessageAnimation -> holders += c.animation
+            is TdApi.MessageDocument -> holders += c.document
+            is TdApi.MessageSticker -> holders += c.sticker
+        }
 
-        for (name in candidates) {
-            try {
-                val f = anyMedia.javaClass.getField(name)
-                val mtObj = f.get(anyMedia) ?: continue
-
-                // Best case: it's TdApi.Minithumbnail
-                if (mtObj is TdApi.Minithumbnail) {
-                    val b = mtObj.data
-                    if (b != null && b.isNotEmpty()) return b
-                }
-
-                // Fallback: read "data" field reflectively
-                try {
-                    val df = mtObj.javaClass.getField("data")
-                    val b = df.get(mtObj) as? ByteArray
-                    if (b != null && b.isNotEmpty()) return b
-                } catch (_: Throwable) { /* ignore */ }
-
-            } catch (_: Throwable) {
-                // ignore and continue
+        for (h in holders) {
+            val data = extractMiniThumbData(h) ?: continue
+            if (data.isNotEmpty()) {
+                return Base64.encodeToString(data, Base64.NO_WRAP)
             }
         }
         return null
     }
 
-    fun miniThumbB64(msg: TdApi.Message): String? {
-        val c = msg.content ?: return null
+    private fun extractMiniThumbData(holder: Any?): ByteArray? {
+        if (holder == null) return null
 
-        val bytes: ByteArray? = when (c) {
-            is TdApi.MessagePhoto -> extractMiniBytes(c.photo)
-            is TdApi.MessageVideo -> extractMiniBytes(c.video)
-            is TdApi.MessageAnimation -> extractMiniBytes(c.animation)
-            is TdApi.MessageDocument -> extractMiniBytes(c.document)
-            is TdApi.MessageSticker -> extractMiniBytes(c.sticker)
-            else -> null
+        // ניסיון ישיר: minithumbnail / miniThumbnail
+        val miniObj =
+            getField(holder, "minithumbnail")
+                ?: getField(holder, "miniThumbnail")
+                ?: getField(holder, "mini_thumbnail")
+
+        val direct = miniObj?.let { getField(it, "data") as? ByteArray }
+        if (direct != null) return direct
+
+        // fallback: סריקה כללית לשדות שדומים ל-minithumbnail
+        for (f in holder.javaClass.fields) {
+            val n = f.name
+            if (n.contains("mini", ignoreCase = true) && n.contains("thumb", ignoreCase = true)) {
+                val o = runCatching { f.get(holder) }.getOrNull() ?: continue
+                val d = getField(o, "data") as? ByteArray
+                if (d != null) return d
+            }
         }
+        return null
+    }
 
-        if (bytes == null || bytes.isEmpty()) return null
-        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    private fun getField(obj: Any, name: String): Any? {
+        return runCatching { obj.javaClass.getField(name).get(obj) }.getOrNull()
     }
 }

@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.pasiflonet.mobile.R
 import com.pasiflonet.mobile.td.TdLibManager
+import com.pasiflonet.mobile.util.TdThumb
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
@@ -40,7 +41,7 @@ class MainActivity : AppCompatActivity() {
 
         adapter = MessagesAdapter { m ->
             // פתיחת מסך פרטים (כבר קיים אצלך)
-            DetailsActivity.start(this, m.chatId, m.msgId, m.text)
+            DetailsActivity.start(this, m.chatId, m.msgId, m.text, miniThumbB64 = m.miniThumbB64)
         }
 
         recycler.layoutManager = LinearLayoutManager(this)
@@ -94,49 +95,33 @@ class MainActivity : AppCompatActivity() {
             else -> "?"
         }
 
+        val hasMedia = when (msg.content) {
+            is TdApi.MessagePhoto,
+            is TdApi.MessageVideo,
+            is TdApi.MessageAnimation,
+            is TdApi.MessageDocument,
+            is TdApi.MessageSticker -> true
+            else -> false
+        }
+
         val text = when (val c = msg.content) {
             is TdApi.MessageText -> c.text.text
-            is TdApi.MessagePhoto -> "📷 " + c.caption.text
-            is TdApi.MessageVideo -> "🎬 " + c.caption.text
-            is TdApi.MessageDocument -> "📎 " + c.caption.text
+            is TdApi.MessagePhoto -> c.caption.text.ifBlank { "(תמונה)" }
+            is TdApi.MessageVideo -> c.caption.text.ifBlank { "(וידאו)" }
+            is TdApi.MessageDocument -> c.caption.text.ifBlank { "(קובץ)" }
+            is TdApi.MessageAnimation -> c.caption.text.ifBlank { "(אנימציה)" }
             else -> "• " + (c.javaClass.simpleName ?: "content")
         }
+
+        val mini = TdThumb.miniThumbB64(msg)
 
         return UiMsg(
             chatId = msg.chatId,
             msgId = msg.id,
             dateSec = msg.date,
             from = from,
-            text = text
+            text = text,
+            miniThumbB64 = mini,
+            hasMedia = hasMedia
         )
     }
-
-    private fun requestMediaPermissionsIfFirstRun() {
-        val sp = getSharedPreferences("pasiflonet", MODE_PRIVATE)
-        if (sp.getBoolean("media_perm_asked", false)) return
-        sp.edit().putBoolean("media_perm_asked", true).apply()
-
-        val perms = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= 33) {
-            perms += Manifest.permission.READ_MEDIA_IMAGES
-            perms += Manifest.permission.READ_MEDIA_VIDEO
-        } else {
-            perms += Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-        mediaPermLauncher.launch(perms.toTypedArray())
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        // תפריט מינימלי בלי XML כדי לא לשבור קומפילציה
-        menu.add(0, 1, 0, "הגדרות")
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == 1) {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            return true
-        }
-        return super.onOptionsItemSelected(item)
-    }
-}

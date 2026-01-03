@@ -16,6 +16,7 @@ import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
@@ -63,6 +64,7 @@ class DetailsActivity : AppCompatActivity() {
     private lateinit var blurOverlay: BlurOverlayView
     private lateinit var tvMeta: TextView
     private lateinit var etCaption: com.google.android.material.textfield.TextInputEditText
+    private lateinit var swSendWithMedia: SwitchMaterial
 
     private var srcChatId: Long = 0L
     private var srcMsgId: Long = 0L
@@ -91,6 +93,7 @@ class DetailsActivity : AppCompatActivity() {
         blurOverlay = findViewById(R.id.blurOverlay)
         tvMeta = findViewById(R.id.tvMeta)
         etCaption = findViewById(R.id.etCaption)
+        swSendWithMedia = findViewById(R.id.swSendWithMedia)
 
         srcChatId = intent.getLongExtra(EXTRA_SRC_CHAT_ID, 0L)
         srcMsgId = intent.getLongExtra(EXTRA_SRC_MESSAGE_ID, 0L)
@@ -99,6 +102,10 @@ class DetailsActivity : AppCompatActivity() {
         mediaUri = intent.getStringExtra(EXTRA_MEDIA_URI)?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
 
         val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
+
+        val hasMediaHint = (mediaUri != null) || (!miniThumbB64.isNullOrBlank())
+        swSendWithMedia.isChecked = hasMediaHint
+        swSendWithMedia.visibility = if (hasMediaHint) android.view.View.VISIBLE else android.view.View.GONE
         etCaption.setText(text)
 
         tvMeta.text = buildMetaString()
@@ -405,7 +412,7 @@ class DetailsActivity : AppCompatActivity() {
             .putLong(SendWorker.KEY_SRC_MESSAGE_ID, srcMsgId)
             .putString(SendWorker.KEY_TARGET_USERNAME, target)
             .putString(SendWorker.KEY_TEXT, text)
-            .putBoolean(SendWorker.KEY_SEND_WITH_MEDIA, mediaUri != null)
+            .putBoolean(SendWorker.KEY_SEND_WITH_MEDIA, swSendWithMedia.isChecked)
             .putString(SendWorker.KEY_MEDIA_URI, mediaUri?.toString().orEmpty())
             .putString(SendWorker.KEY_MEDIA_MIME, mediaMime.orEmpty())
             .putString(SendWorker.KEY_WATERMARK_URI, wm)

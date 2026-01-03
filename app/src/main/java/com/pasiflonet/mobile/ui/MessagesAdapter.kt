@@ -17,10 +17,10 @@ data class UiMsg(
     val dateSec: Int,
     val from: String,
     val text: String,
-    val mediaUri: String? = null,
-    val mediaMime: String? = null,
-    val miniThumbB64: String? = null
+    val miniThumbB64: String? = null,
+    val hasMedia: Boolean = false
 )
+
 class MessagesAdapter(
     private val onDetails: (UiMsg) -> Unit
 ) : RecyclerView.Adapter<MessagesAdapter.VH>() {
@@ -45,7 +45,7 @@ class MessagesAdapter(
         val m = items[position]
         holder.tvDate.text = fmt.format(Date(m.dateSec.toLong() * 1000L))
         holder.tvFrom.text = m.from
-        holder.tvMsg.text = m.text
+        holder.tvMsg.text = if (m.hasMedia) "📎 ${m.text}" else m.text
         holder.btnDetails.setOnClickListener { onDetails(m) }
     }
 
