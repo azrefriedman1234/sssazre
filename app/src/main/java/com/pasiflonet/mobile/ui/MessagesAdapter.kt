@@ -11,12 +11,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class UiMsg(
-    val chatId: Long,
+data class UiMsg(val chatId: Long,
     val msgId: Long,
     val dateSec: Int,
     val from: String,
     val text: String
+    val mediaUri: String? = null,
+    val mediaMime: String? = null,
+    val miniThumbB64: String? = null,
 )
 
 class MessagesAdapter(
