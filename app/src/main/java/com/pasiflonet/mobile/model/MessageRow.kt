@@ -9,7 +9,8 @@ data class MessageRow(
     val text: String,
     val unixSeconds: Long,
     val typeLabel: String,
-    val mediaKind: String? = null,
+    val mediaKind: String?,
     val thumbLocalPath: String? = null,
-    val hasMedia: Boolean = false
+    val miniThumbBase64: String? = null,
+    val hasMedia: Boolean
 )

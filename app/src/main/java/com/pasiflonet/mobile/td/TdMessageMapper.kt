@@ -1,5 +1,6 @@
 package com.pasiflonet.mobile.td
 
+import android.util.Base64
 import com.pasiflonet.mobile.model.MessageRow
 import org.drinkless.tdlib.TdApi
 
@@ -12,7 +13,7 @@ object TdMessageMapper {
         }
     }
 
-    fun mapToRow(chatId: Long, message: TdApi.Message, thumbLocalPath: String?): MessageRow {
+    fun mapToRow(chatId: Long, message: TdApi.Message, thumbLocalPath: String?, miniThumbB64: String?): MessageRow {
         val (text, hasMedia, mediaKind) = extractTextAndMedia(message.content)
         val typeLabel = buildString {
             append("ערוץ")
@@ -26,6 +27,7 @@ object TdMessageMapper {
             typeLabel = typeLabel,
             mediaKind = mediaKind,
             thumbLocalPath = thumbLocalPath,
+            miniThumbBase64 = miniThumbB64,
             hasMedia = hasMedia
         )
     }
@@ -34,7 +36,7 @@ object TdMessageMapper {
         return when (content.constructor) {
             TdApi.MessageText.CONSTRUCTOR -> {
                 val c = content as TdApi.MessageText
-                Triple(c.text.text ?: "", false, null)
+                Triple(c.text?.text ?: "", false, null)
             }
             TdApi.MessagePhoto.CONSTRUCTOR -> {
                 val c = content as TdApi.MessagePhoto
@@ -52,9 +54,7 @@ object TdMessageMapper {
                 val c = content as TdApi.MessageDocument
                 Triple(c.caption?.text ?: "", true, "קובץ")
             }
-            else -> {
-                Triple("", false, "אחר")
-            }
+            else -> Triple("", false, "אחר")
         }
     }
 
@@ -78,6 +78,17 @@ object TdMessageMapper {
             }
             else -> null
         }
+    }
+
+    fun getMiniThumbBase64(content: TdApi.MessageContent): String? {
+        val data: ByteArray? = when (content.constructor) {
+            TdApi.MessagePhoto.CONSTRUCTOR -> (content as TdApi.MessagePhoto).photo?.minithumbnail?.data
+            TdApi.MessageVideo.CONSTRUCTOR -> (content as TdApi.MessageVideo).video?.minithumbnail?.data
+            TdApi.MessageAnimation.CONSTRUCTOR -> (content as TdApi.MessageAnimation).animation?.minithumbnail?.data
+            TdApi.MessageDocument.CONSTRUCTOR -> (content as TdApi.MessageDocument).document?.minithumbnail?.data
+            else -> null
+        }
+        return if (data != null && data.isNotEmpty()) Base64.encodeToString(data, Base64.NO_WRAP) else null
     }
 
     fun getMainMediaFileId(content: TdApi.MessageContent): Int? {

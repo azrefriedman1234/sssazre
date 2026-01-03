@@ -1,5 +1,6 @@
 package com.pasiflonet.mobile.ui
 
+import android.util.Base64
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -28,12 +29,15 @@ class MessagesAdapter(
         holder.b.tvText.text = item.text.ifBlank { "—" }
         holder.b.btnDetails.setOnClickListener { onDetails(item) }
 
-        if (item.thumbLocalPath != null) {
-            holder.b.ivThumb.load("file://${item.thumbLocalPath}") {
-                crossfade(true)
+        when {
+            item.thumbLocalPath != null -> {
+                holder.b.ivThumb.load("file://${item.thumbLocalPath}") { crossfade(true) }
             }
-        } else {
-            holder.b.ivThumb.setImageDrawable(null)
+            !item.miniThumbBase64.isNullOrBlank() -> {
+                val bytes = Base64.decode(item.miniThumbBase64, Base64.DEFAULT)
+                holder.b.ivThumb.load(bytes) { crossfade(true) }
+            }
+            else -> holder.b.ivThumb.setImageDrawable(null)
         }
     }
 
@@ -47,9 +51,7 @@ class MessagesAdapter(
     fun trimTo(max: Int) {
         if (items.size <= max) return
         val removeCount = items.size - max
-        for (i in 0 until removeCount) items.removeAt(items.size - 1)
+        repeat(removeCount) { items.removeAt(items.size - 1) }
         notifyDataSetChanged()
     }
-
-    fun getItem(position: Int) = items[position]
 }

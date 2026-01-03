@@ -3,7 +3,7 @@ package com.pasiflonet.mobile
 import android.app.Application
 import androidx.work.Configuration
 import com.pasiflonet.mobile.td.TdLibManager
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 
 class PasiflonetApp : Application(), Configuration.Provider {
 

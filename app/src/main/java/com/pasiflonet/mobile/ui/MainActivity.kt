@@ -14,7 +14,7 @@ import com.pasiflonet.mobile.util.TempCleaner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         adapter = MessagesAdapter(
             onDetails = { row ->
                 val i = Intent(this, DetailsActivity::class.java)
-                i.putExtra(DetailsActivity.EXTRA_ROW_JSON, com.pasiflonet.mobile.util.JsonUtil.toJson(row))
+                i.putExtra("row_json", com.pasiflonet.mobile.util.JsonUtil.toJson(row))
                 startActivity(i)
             }
         )
@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun seedRecentMessages() {
         lifecycleScope.launch(Dispatchers.IO) {
-            TdLibManager.send(TdApi.GetChats(null, 100)) { obj ->
+            TdLibManager.send(TdApi.GetChats(0, 0, 100)) { obj ->
                 if (obj.constructor != TdApi.Chats.CONSTRUCTOR) return@send
                 val chats = (obj as TdApi.Chats).chatIds ?: return@send
                 chats.forEach { chatId ->
