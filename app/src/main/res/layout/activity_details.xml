@@ -29,10 +29,7 @@
             android:contentDescription="@null" />
 
         <!-- Blur overlay draws rectangles -->
-        <com.pasiflonet.mobile.ui.DetailsActivity$BlurOverlayView
-            android:id="@+id/blurOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+        
 
     </FrameLayout>
 
