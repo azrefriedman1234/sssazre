@@ -8,7 +8,6 @@
     android:paddingVertical="10dp"
     android:paddingHorizontal="8dp">
 
-    <!-- טקסט הודעה -->
     <TextView
         android:id="@+id/tvMsg"
         android:layout_width="0dp"
@@ -20,14 +19,12 @@
         android:ellipsize="end"
         android:text="טקסט הודעה" />
 
-    <!-- Divider -->
     <View
         android:layout_width="1dp"
         android:layout_height="match_parent"
         android:layout_marginHorizontal="8dp"
         android:background="#33FFFFFF" />
 
-    <!-- תאריך/שעה -->
     <TextView
         android:id="@+id/tvDate"
         android:layout_width="0dp"
@@ -37,16 +34,14 @@
         android:textSize="12sp"
         android:maxLines="1"
         android:ellipsize="end"
-        android:text="2026-01-03 09:10" />
+        android:text="תאריך" />
 
-    <!-- Divider -->
     <View
         android:layout_width="1dp"
         android:layout_height="match_parent"
         android:layout_marginHorizontal="8dp"
         android:background="#33FFFFFF" />
 
-    <!-- סוג/מדיה (אם תרצה לקרוא לזה דעה/סוג — זה המקום) -->
     <TextView
         android:id="@+id/tvType"
         android:layout_width="0dp"
@@ -56,16 +51,14 @@
         android:textSize="12sp"
         android:maxLines="1"
         android:ellipsize="end"
-        android:text="טקסט/תמונה" />
+        android:text="סוג" />
 
-    <!-- Divider -->
     <View
         android:layout_width="1dp"
         android:layout_height="match_parent"
         android:layout_marginHorizontal="8dp"
         android:background="#33FFFFFF" />
 
-    <!-- כפתור פרטים -->
     <TextView
         android:id="@+id/btnDetails"
         android:layout_width="0dp"

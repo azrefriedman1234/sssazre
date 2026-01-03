@@ -1,23 +1,14 @@
 package com.pasiflonet.mobile.ui
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.snackbar.Snackbar
 import com.pasiflonet.mobile.databinding.ActivityMainBinding
 import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.td.TdMessageMapper
-import com.pasiflonet.mobile.td.TdMediaDownloader
 import com.pasiflonet.mobile.util.TempCleaner
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
@@ -28,55 +19,49 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
     private lateinit var adapter: MessagesAdapter
-    private val chatIsChannel = ConcurrentHashMap<Long, Boolean>()
     private val started = AtomicBoolean(false)
-
-    private val permLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
-            val ok = res.values.all { it }
-            Snackbar.make(
-                b.root,
-                if (ok) "✅ ניתנה הרשאה למדיה" else "⚠️ בלי הרשאה למדיה חלק מהפעולות לא יעבדו",
-                Snackbar.LENGTH_LONG
-            ).show()
-        }
+    private val chatIsChannel = ConcurrentHashMap<Long, Boolean>()  // סינון רק ערוצים
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        // בקשת הרשאה מיד, לפני ניווטים
-        requestMediaPermissionsIfNeeded()
-
         TdLibManager.init(applicationContext)
         TdLibManager.ensureClient()
         TdLibManager.send(TdApi.GetAuthorizationState()) { }
 
         adapter = MessagesAdapter { row ->
+            // כפתור פרטים – נשאר כמו שהיה אצלך (אם MessageRow מכיל chatId/messageId זה עובד)
             try {
-                val i = Intent(this, DetailsActivity::class.java).apply {
-                    putExtra("src_chat_id", row.chatId)
-                    putExtra("src_message_id", row.messageId)
-                    putExtra("src_text", row.text)
-                    putExtra("src_type", row.typeLabel)
-                }
+                val i = android.content.Intent(this, DetailsActivity::class.java)
+                val cls = row::class.java
+                val chatId = cls.getDeclaredField("chatId" if true else "chatId").apply{isAccessible=true}.getLong(row)
+                val msgId  = cls.getDeclaredField("messageId" if true else "messageId").apply{isAccessible=true}.getLong(row)
+                i.putExtra("src_chat_id", chatId)
+                i.putExtra("src_message_id", msgId)
+                i.putExtra("src_text", (cls.getDeclaredField("text").apply{isAccessible=true}.get(row) ?: "").toString())
+                i.putExtra("src_type", (cls.getDeclaredField("typeLabel" if true else "text").apply{isAccessible=true}.get(row) ?: "").toString())
                 startActivity(i)
             } catch (t: Throwable) {
-                Toast.makeText(this, "קריסה נמנעה בפרטים: ${t.message}", Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this, "פרטים לא זמינים: " + (t.message ?: "שגיאה"), android.widget.Toast.LENGTH_LONG).show()
             }
         }
 
         b.recycler.layoutManager = LinearLayoutManager(this)
         b.recycler.adapter = adapter
 
-        b.btnExit.setOnClickListener { finishAffinity() }
+        // כפתורים
+        try {
+            b.btnExit.setOnClickListener { finishAffinity() }
+        } catch (_: Throwable) {}
 
-        // אצלך הכפתור נקרא btnClearTemp
-        b.btnClearTemp.setOnClickListener {
-            val n = TempCleaner.clean(applicationContext)
-            Snackbar.make(b.root, "✅ נמחקו קבצים זמניים: $n", Snackbar.LENGTH_SHORT).show()
-        }
+        try {
+            b.btnClearTemp.setOnClickListener {
+                val n = TempCleaner.clean(applicationContext)
+                Snackbar.make(b.root, "✅ נמחקו קבצים זמניים: $n", Snackbar.LENGTH_SHORT).show()
+            }
+        } catch (_: Throwable) {}
 
         lifecycleScope.launch {
             TdLibManager.authState.collectLatest { st ->
@@ -84,13 +69,12 @@ class MainActivity : AppCompatActivity() {
 
                 if (st.constructor == TdApi.AuthorizationStateReady.CONSTRUCTOR) {
                     if (started.compareAndSet(false, true)) {
-
-                        adapter.clearAll()
-observeTdUpdates()
+                        adapter.clearAll() // חשוב: מתחילים נקי – רק חדש אחרי פתיחה
+                        observeOnlyNewMessages()
                     }
                 } else {
                     if (started.compareAndSet(false, true)) {
-                        startActivity(Intent(this@MainActivity, LoginActivity::class.java))
+                        startActivity(android.content.Intent(this@MainActivity, LoginActivity::class.java))
                         finish()
                     }
                 }
@@ -98,90 +82,39 @@ observeTdUpdates()
         }
     }
 
-    private fun requestMediaPermissionsIfNeeded() {
-        val perms = if (Build.VERSION.SDK_INT >= 33) {
-            arrayOf(
-                Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VIDEO
-            )
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-
-        val missing = perms.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (missing.isNotEmpty()) {
-            permLauncher.launch(missing.toTypedArray())
-        }
-    }
-
-    private fun
-{
-        lifecycleScope.launch(Dispatchers.IO) {
-            TdLibManager.send(TdApi.GetChats(TdApi.ChatListMain(), 100)) { obj ->
-                if (obj.constructor != TdApi.Chats.CONSTRUCTOR) return@send
-                val chats = (obj as TdApi.Chats).chatIds ?: return@send
-                for (chatId in chats) {
-                    TdLibManager.send(TdApi.GetChat(chatId)) { chatObj ->
-                        if (chatObj.constructor != TdApi.Chat.CONSTRUCTOR) return@send
-                        val chat = chatObj as TdApi.Chat
-                        val isChannel = TdMessageMapper.isChannelChat(chat)
-                        chatIsChannel[chatId] = isChannel
-                        if (!isChannel) return@send
-
-                        TdLibManager.send(TdApi.GetChatHistory(chatId, 0, 0, 1, false)) { histObj ->
-                            if (histObj.constructor != TdApi.Messages.CONSTRUCTOR) return@send
-                            val msgs = (histObj as TdApi.Messages).messages ?: return@send
-                            if (msgs.isEmpty()) return@send
-                            addMessageRow(chatId, msgs[0])
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun observeTdUpdates() {
+    private fun observeOnlyNewMessages() {
         lifecycleScope.launch {
             TdLibManager.updates.collectLatest { obj ->
                 if (obj == null) return@collectLatest
-                if (obj.constructor == TdApi.UpdateNewMessage.CONSTRUCTOR) {
-                    val up = obj as TdApi.UpdateNewMessage
-                    val msg = up.message ?: return@collectLatest
-                    val chatId = msg.chatId
+                if (obj.constructor != TdApi.UpdateNewMessage.CONSTRUCTOR) return@collectLatest
 
-                    val isChannel = chatIsChannel[chatId]
-                    if (isChannel == null) {
-                        TdLibManager.send(TdApi.GetChat(chatId)) { chatObj ->
-                            if (chatObj.constructor != TdApi.Chat.CONSTRUCTOR) return@send
-                            val chat = chatObj as TdApi.Chat
-                            val ch = TdMessageMapper.isChannelChat(chat)
-                            chatIsChannel[chatId] = ch
-                            if (ch) addMessageRow(chatId, msg)
-                        }
-                    } else if (isChannel) {
-                        addMessageRow(chatId, msg)
+                val up = obj as TdApi.UpdateNewMessage
+                val msg = up.message ?: return@collectLatest
+                val chatId = msg.chatId
+
+                val isChannel = chatIsChannel[chatId]
+                if (isChannel == null) {
+                    TdLibManager.send(TdApi.GetChat(chatId)) { chatObj ->
+                        if (chatObj == null || chatObj.constructor != TdApi.Chat.CONSTRUCTOR) return@send
+                        val chat = chatObj as TdApi.Chat
+                        val ch = TdMessageMapper.isChannelChat(chat)
+                        chatIsChannel[chatId] = ch
+                        if (ch) addRow(chatId, msg)
                     }
+                } else if (isChannel) {
+                    addRow(chatId, msg)
                 }
             }
         }
     }
 
-    private fun addMessageRow(chatId: Long, msg: TdApi.Message) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val thumbId = TdMessageMapper.getThumbFileId(msg.content)
-            val thumbPath = if (thumbId != null) {
-                TdMediaDownloader.downloadFile(thumbId, priority = 8, synchronous = true)
-            } else null
-
-            val row = TdMessageMapper.mapToRow(chatId, msg, thumbPath, null)
-            runOnUiThread {
-                adapter.prepend(row)
-                adapter.trimTo(100)
-                b.recycler.scrollToPosition(0)
-            }
+    private fun addRow(chatId: Long, msg: TdApi.Message) {
+        // בלי היסטוריה, בלי thumbs – רק טבלה מסודרת
+        val row = TdMessageMapper.mapToRow(chatId, msg, null, null)
+        runOnUiThread {
+            adapter.prepend(row)
+            adapter.trimTo(100)
+            b.recycler.scrollToPosition(0)
         }
     }
 }

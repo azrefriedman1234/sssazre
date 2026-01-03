@@ -15,16 +15,13 @@ class MessagesAdapter(
     private val items = ArrayList<MessageRow>()
 
     fun prepend(row: MessageRow) {
-        items.add(0, row)
+        items.add(0, row)           // חדש למעלה
         notifyItemInserted(0)
     }
 
     fun trimTo(max: Int) {
         if (items.size <= max) return
-        val removeCount = items.size - max
-        for (i in 0 until removeCount) {
-            items.removeAt(items.size - 1)
-        }
+        while (items.size > max) items.removeAt(items.size - 1) // ישן נמחק
         notifyDataSetChanged()
     }
 
@@ -51,10 +48,9 @@ class MessagesAdapter(
         private val btnDetails: TextView = v.findViewById(R.id.btnDetails)
 
         fun bind(row: MessageRow) {
-            tvMsg.text = row.text.ifBlank { "(ללא טקסט)" }
-            tvDate.text = row.dateTime
+            tvMsg.text = (row.text).toString().ifBlank { "(ללא טקסט)" }
+            tvDate.text = ""
             tvType.text = row.typeLabel
-
             btnDetails.setOnClickListener { onDetails(row) }
         }
     }
