@@ -40,7 +40,7 @@ object TdLibManager {
             try {
                 for (l in listeners) l(obj)
             
-            notifyAuthState(update.authorizationState)
+            if (obj is TdApi.UpdateAuthorizationState) notifyAuthState(obj.authorizationState)
 } catch (t: Throwable) {
                 Log.e(TAG, "listener crash", t)
             }
