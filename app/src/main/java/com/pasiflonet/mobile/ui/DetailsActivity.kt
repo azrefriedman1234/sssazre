@@ -132,7 +132,7 @@ class DetailsActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.btnBlur).setOnClickListener {
-            blurOverlay.setDrawEnabled(true)
+            blurOverlay.blurMode = true
             blurOverlay.blurMode = !blurOverlay.blurMode
             blurOverlay.visibility = View.VISIBLE
             blurOverlay.invalidate()
