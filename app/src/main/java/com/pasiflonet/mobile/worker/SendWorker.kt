@@ -27,6 +27,10 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         const val KEY_MEDIA_URI = "media_uri"
         const val KEY_MEDIA_MIME = "media_mime"
         const val KEY_BLUR_RECTS = "blur_rects" // "l,t,r,b;..."
+
+        // watermark position normalized (0..1), -1 means default
+        const val KEY_WM_X = "wm_x"
+        const val KEY_WM_Y = "wm_y"
     }
 
     override fun doWork(): Result {
@@ -44,6 +48,9 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val effMime = if (mediaMime.isBlank()) mimeFromUri else mediaMime
         val blurRectsStr = inputData.getString(KEY_BLUR_RECTS).orEmpty().trim()
         val watermarkUriStr = inputData.getString(KEY_WATERMARK_URI).orEmpty().trim()
+
+        val wmX = inputData.getFloat(KEY_WM_X, -1f)
+        val wmY = inputData.getFloat(KEY_WM_Y, -1f)
 
         if (srcChatId == 0L || srcMsgId == 0L || targetUsernameRaw.isBlank()) return Result.failure()
 

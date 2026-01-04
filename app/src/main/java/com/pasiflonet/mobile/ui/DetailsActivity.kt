@@ -490,7 +490,7 @@ class DetailsActivity : AppCompatActivity() {
         val c = msg.content ?: return Pair(false, null)
         val hasMedia = c.constructor != TdApi.MessageText.CONSTRUCTOR
 
-        val carrier: Any? = when (c) {
+        val carrier: Any = when (c) {
             is TdApi.MessagePhoto -> c.photo
             is TdApi.MessageVideo -> c.video
             is TdApi.MessageAnimation -> c.animation
@@ -498,20 +498,27 @@ class DetailsActivity : AppCompatActivity() {
             else -> null
         } ?: return Pair(hasMedia, null)
 
-        fun getField(obj: Any, name: String): Any? = try {
-            val f = obj.javaClass.getField(name)
-            f.isAccessible = true
-            f.get(obj)
-        } catch (_: Throwable) { null }
+        fun getField(obj: Any?, name: String): Any? {
+            if (obj == null) return null
+            return try {
+                val f = obj.javaClass.getField(name)
+                f.isAccessible = true
+                f.get(obj)
+            } catch (_: Throwable) {
+                null
+            }
+        }
 
         val mt = getField(carrier, "minithumbnail")
             ?: getField(carrier, "miniThumbnail")
             ?: getField(carrier, "minithumb")
+            ?: return Pair(hasMedia, null)
 
-        val data = (mt?.let { getField(it, "data") } as? ByteArray) ?: return Pair(hasMedia, null)
+        val data = getField(mt, "data") as? ByteArray ?: return Pair(hasMedia, null)
         if (data.isEmpty()) return Pair(hasMedia, null)
 
         return Pair(hasMedia, Base64.encodeToString(data, Base64.NO_WRAP))
     }
+
     // -----------------------------------------------------
 }
