@@ -20,6 +20,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
 import com.pasiflonet.mobile.R
@@ -80,6 +81,7 @@ class DetailsActivity : AppCompatActivity() {
     private var mediaUri: Uri? = null
     private var mediaMime: String? = null
     private var miniThumbB64: String? = null
+    private var hasMediaHint: Boolean = false
 
     // for images
     private var workingBitmap: Bitmap? = null
@@ -103,10 +105,15 @@ class DetailsActivity : AppCompatActivity() {
         etCaption = findViewById(R.id.etCaption)
         swSendWithMedia = findViewById(R.id.swSendWithMedia)
 
+        val hasMedia = (mediaUri != null) || hasMediaHint || (!miniThumbB64.isNullOrBlank()) || (!mediaMime.isNullOrBlank())
+        swSendWithMedia.visibility = if (hasMedia) View.VISIBLE else View.GONE
+        swSendWithMedia.isChecked = hasMedia
+
         srcChatId = intent.getLongExtra(EXTRA_SRC_CHAT_ID, 0L)
         srcMsgId = intent.getLongExtra(EXTRA_SRC_MESSAGE_ID, 0L)
         mediaMime = intent.getStringExtra(EXTRA_MEDIA_MIME)
         miniThumbB64 = intent.getStringExtra(EXTRA_MINITHUMB_B64)
+        hasMediaHint = intent.getBooleanExtra(EXTRA_HAS_MEDIA_HINT, false)
         mediaUri = intent.getStringExtra(EXTRA_MEDIA_URI)?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
 
         val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
@@ -123,7 +130,7 @@ class DetailsActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.btnWatermark).setOnClickListener { onWatermarkClick() }
         findViewById<View>(R.id.btnBlur).setOnClickListener { toggleBlurMode() }
-        findViewById<View>(R.id.btnTranslate).setOnClickListener { translateToHebrew() }
+        findViewById<View>(R.id.btnTranslate).setOnClickListener { translateToHebrewCompat() }
         findViewById<View>(R.id.btnSend).setOnClickListener { enqueueSend() }
     }
 
@@ -176,7 +183,7 @@ class DetailsActivity : AppCompatActivity() {
         }
 
         // 2) No mediaUri -> fallback to miniThumb
-        val thumb = decodeMiniThumb(miniThumbB64)
+        val thumb = decodeMiniThumbCompat(miniThumbB64)
         if (thumb != null) {
             ivPreview.setImageBitmap(thumb)
         } else {
