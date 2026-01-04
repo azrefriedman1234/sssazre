@@ -23,7 +23,6 @@ object TdLibManager {
     fun init(ctx: Context) {
         if (inited.compareAndSet(false, true)) {
             ctx.applicationContext // keep
-            TdApi.setLogVerbosityLevel(1)
         }
     }
 
