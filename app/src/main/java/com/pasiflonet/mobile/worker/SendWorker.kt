@@ -1,6 +1,7 @@
 package com.pasiflonet.mobile.worker
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.work.Worker
@@ -24,9 +25,9 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         const val KEY_TEXT = "text"
         const val KEY_SEND_WITH_MEDIA = "send_with_media"
 
-        const val KEY_WATERMARK_URI = "watermark_uri"
         const val KEY_MEDIA_URI = "media_uri"
         const val KEY_MEDIA_MIME = "media_mime"
+        const val KEY_WATERMARK_URI = "watermark_uri"
         const val KEY_BLUR_RECTS = "blur_rects"
 
         const val KEY_WM_X = "wm_x"
@@ -35,7 +36,11 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
 
     private enum class Kind { PHOTO, VIDEO, DOCUMENT }
 
-    private data class TdMedia(val localFile: File, val mime: String, val kind: Kind)
+    private data class TdMedia(
+        val file: File,
+        val mime: String,
+        val kind: Kind
+    )
 
     override fun doWork(): Result {
         TdLibManager.init(applicationContext)
@@ -59,59 +64,70 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val username = targetUsernameRaw.removePrefix("@").trim()
         if (username.isBlank()) return Result.failure()
 
-        // 1) Resolve @username -> chatId
-        val latch1 = CountDownLatch(1)
-        var targetChatId: Long = 0L
-        TdLibManager.send(TdApi.SearchPublicChat(username)) { obj ->
-            if (obj is TdApi.Chat) targetChatId = obj.id
-            latch1.countDown()
-        }
-        if (!latch1.await(25, TimeUnit.SECONDS) || targetChatId == 0L) return Result.failure()
+        // resolve @username -> chatId
+        val targetChatId = resolvePublicChatId(username) ?: return Result.failure()
 
         val caption = TdApi.FormattedText(text, null)
 
-        // 2) send text only
+        // If user chose text-only: send text
         if (!sendWithMedia) {
-            val content = TdApi.InputMessageText().apply { this.text = caption }
+            val content = TdApi.InputMessageText().apply {
+                this.text = caption
+                this.linkPreviewOptions = null
+                this.clearDraft = false
+            }
             return sendContent(targetChatId, content)
         }
 
-        // 3) MUST send media (no fallback)
-        val tdMedia: TdMedia? = if (mediaUriStr.isNotBlank()) {
-            val inUri = runCatching { Uri.parse(mediaUriStr) }.getOrNull() ?: return Result.failure()
-            val localIn = copyUriToCache(inUri, mediaMimeIn.ifBlank { "application/octet-stream" }) ?: return Result.failure()
+        // Media required. NO fallback to text.
+        val tdMedia = if (mediaUriStr.isNotBlank()) {
+            val uri = runCatching { Uri.parse(mediaUriStr) }.getOrNull() ?: return Result.failure()
+            val local = copyUriToCache(uri, mediaMimeIn.ifBlank { "application/octet-stream" }) ?: return Result.failure()
             val kind = when {
                 mediaMimeIn.lowercase(Locale.ROOT).startsWith("image/") -> Kind.PHOTO
                 mediaMimeIn.lowercase(Locale.ROOT).startsWith("video/") -> Kind.VIDEO
                 else -> Kind.DOCUMENT
             }
-            TdMedia(localIn, mediaMimeIn.ifBlank { "application/octet-stream" }, kind)
+            TdMedia(local, mediaMimeIn.ifBlank { "application/octet-stream" }, kind)
         } else {
-            fetchMediaFromTelegram(srcChatId, srcMsgId)
+            fetchMediaFromTelegram(srcChatId, srcMsgId) ?: return Result.failure()
         }
 
-        if (tdMedia == null) return Result.failure()
-
-        // 4) edits
         val finalFile = processEdits(
-            input = tdMedia.localFile,
+            input = tdMedia.file,
             mime = tdMedia.mime,
             kind = tdMedia.kind,
             blurRectsStr = blurRectsStr,
             watermarkUriStr = watermarkUriStr,
             wmX = wmX,
             wmY = wmY
-        ) ?: tdMedia.localFile
+        ) ?: tdMedia.file
 
-        // 5) send
         val inputFile = TdApi.InputFileLocal(finalFile.absolutePath)
         val content: TdApi.InputMessageContent = when (tdMedia.kind) {
-            Kind.PHOTO -> TdApi.InputMessagePhoto().apply { this.photo = inputFile; this.caption = caption }
-            Kind.VIDEO -> TdApi.InputMessageVideo().apply { this.video = inputFile; this.caption = caption; this.supportsStreaming = true }
-            Kind.DOCUMENT -> TdApi.InputMessageDocument().apply { this.document = inputFile; this.caption = caption }
+            Kind.PHOTO -> TdApi.InputMessagePhoto().apply { photo = inputFile; this.caption = caption }
+            Kind.VIDEO -> TdApi.InputMessageVideo().apply { video = inputFile; this.caption = caption; supportsStreaming = true }
+            Kind.DOCUMENT -> TdApi.InputMessageDocument().apply { document = inputFile; this.caption = caption }
         }
 
-        return sendContent(targetChatId, content)
+        val res = sendContent(targetChatId, content)
+
+        // Cleanup ONLY cache files we created
+        runCatching { if (finalFile.parentFile == applicationContext.cacheDir) finalFile.delete() }
+        runCatching { if (tdMedia.file.parentFile == applicationContext.cacheDir) tdMedia.file.delete() }
+
+        return res
+    }
+
+    private fun resolvePublicChatId(username: String): Long? {
+        val latch = CountDownLatch(1)
+        var chatId: Long? = null
+        TdLibManager.send(TdApi.SearchPublicChat(username)) { obj ->
+            if (obj is TdApi.Chat) chatId = obj.id
+            latch.countDown()
+        }
+        if (!latch.await(25, TimeUnit.SECONDS)) return null
+        return chatId
     }
 
     private fun sendContent(chatId: Long, content: TdApi.InputMessageContent): Result {
@@ -121,20 +137,13 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
             ok = (obj is TdApi.Message)
             latch.countDown()
         }
-        if (!latch.await(60, TimeUnit.SECONDS)) return Result.failure()
+        if (!latch.await(45, TimeUnit.SECONDS)) return Result.failure()
         return if (ok) Result.success() else Result.failure()
     }
 
     private fun fetchMediaFromTelegram(srcChatId: Long, srcMsgId: Long): TdMedia? {
-        val latch = CountDownLatch(1)
-        var msg: TdApi.Message? = null
-        TdLibManager.send(TdApi.GetMessage(srcChatId, srcMsgId)) { obj ->
-            if (obj is TdApi.Message) msg = obj
-            latch.countDown()
-        }
-        if (!latch.await(20, TimeUnit.SECONDS) || msg == null) return null
-
-        val c = msg!!.content ?: return null
+        val msg = getMessageSync(srcChatId, srcMsgId) ?: return null
+        val c = msg.content ?: return null
 
         val (fileId, mime, kind) = when (c) {
             is TdApi.MessagePhoto -> {
@@ -162,9 +171,19 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         return TdMedia(cached, mime, kind)
     }
 
-    private fun ensureFileDownloaded(fileId: Int, timeoutSec: Int = 120): File? {
-        TdLibManager.send(TdApi.DownloadFile(fileId, 32, 0, 0, false)) { }
+    private fun getMessageSync(chatId: Long, msgId: Long): TdApi.Message? {
+        val latch = CountDownLatch(1)
+        var msg: TdApi.Message? = null
+        TdLibManager.send(TdApi.GetMessage(chatId, msgId)) { obj ->
+            if (obj is TdApi.Message) msg = obj
+            latch.countDown()
+        }
+        if (!latch.await(20, TimeUnit.SECONDS)) return null
+        return msg
+    }
 
+    private fun ensureFileDownloaded(fileId: Int, timeoutSec: Int = 140): File? {
+        TdLibManager.send(TdApi.DownloadFile(fileId, 32, 0, 0, false)) { }
         val deadline = System.currentTimeMillis() + timeoutSec * 1000L
         while (System.currentTimeMillis() < deadline) {
             val latch = CountDownLatch(1)
@@ -181,7 +200,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
                 val ff = File(path)
                 if (ff.exists() && ff.length() > 0) return ff
             }
-            Thread.sleep(300)
+            Thread.sleep(350)
         }
         return null
     }
@@ -198,9 +217,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
                 FileOutputStream(out).use { fos -> input.copyTo(fos) }
             }
             out
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 
     private fun copyUriToCache(uri: Uri, mime: String): File? {
@@ -216,11 +233,10 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
                 FileOutputStream(out).use { fos -> input.copyTo(fos) }
             }
             out
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 
+    // ---------- Edits (FFmpeg) ----------
     private fun processEdits(
         input: File,
         mime: String,
@@ -240,21 +256,21 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
             Kind.VIDEO -> {
                 val (vw, vh) = getVideoSize(input) ?: return null
                 val out = File(applicationContext.cacheDir, "edit_${System.currentTimeMillis()}.mp4")
+                val wmW = (vw * 0.22f).roundToInt().coerceAtLeast(48)
 
-                val filters = buildFilter(
-                    vw, vh,
-                    blurRectsStr,
+                val filter = buildBlurOverlayFilter(
+                    w = vw, h = vh,
+                    rectsStr = blurRectsStr,
                     hasWm = (wmFile != null),
-                    wmW = (vw * 0.22f).roundToInt().coerceAtLeast(48),
-                    wmX = wmX,
-                    wmY = wmY
+                    wmW = wmW,
+                    wmX = wmX, wmY = wmY
                 ) ?: return null
 
                 val cmd = mutableListOf<String>()
                 cmd += "-y"
                 cmd += "-i"; cmd += input.absolutePath
                 if (wmFile != null) { cmd += "-i"; cmd += wmFile.absolutePath }
-                cmd += "-filter_complex"; cmd += filters
+                cmd += "-filter_complex"; cmd += filter
                 cmd += "-map"; cmd += "[vout]"
                 cmd += "-map"; cmd += "0:a?"
                 cmd += "-c:v"; cmd += "libx264"
@@ -263,38 +279,46 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
                 cmd += "-c:a"; cmd += "aac"
                 cmd += out.absolutePath
 
-                val rc = FFmpegKit.execute(cmd.joinToString(" ")).returnCode
+                val session = FFmpegKit.execute(cmd.joinToString(" ") { q(it) })
+                val rc = session.returnCode
                 if (rc != null && rc.isValueSuccess) out else null
             }
 
             Kind.PHOTO -> {
                 val (iw, ih) = getImageSize(input) ?: return null
-                val out = File(applicationContext.cacheDir, "edit_${System.currentTimeMillis()}.jpg")
+                val out = File(applicationContext.cacheDir, "img_${System.currentTimeMillis()}.jpg")
+                val wmW = (iw * 0.22f).roundToInt().coerceAtLeast(48)
 
-                val filters = buildFilter(
-                    iw, ih,
-                    blurRectsStr,
+                val filter = buildBlurOverlayFilter(
+                    w = iw, h = ih,
+                    rectsStr = blurRectsStr,
                     hasWm = (wmFile != null),
-                    wmW = (iw * 0.22f).roundToInt().coerceAtLeast(48),
-                    wmX = wmX,
-                    wmY = wmY
+                    wmW = wmW,
+                    wmX = wmX, wmY = wmY
                 ) ?: return null
 
                 val cmd = mutableListOf<String>()
                 cmd += "-y"
                 cmd += "-i"; cmd += input.absolutePath
                 if (wmFile != null) { cmd += "-i"; cmd += wmFile.absolutePath }
-                cmd += "-filter_complex"; cmd += filters
+                cmd += "-filter_complex"; cmd += filter
                 cmd += "-map"; cmd += "[vout]"
                 cmd += "-frames:v"; cmd += "1"
+                cmd += "-q:v"; cmd += "2"
                 cmd += out.absolutePath
 
-                val rc = FFmpegKit.execute(cmd.joinToString(" ")).returnCode
+                val session = FFmpegKit.execute(cmd.joinToString(" ") { q(it) })
+                val rc = session.returnCode
                 if (rc != null && rc.isValueSuccess) out else null
             }
 
             Kind.DOCUMENT -> null
         }
+    }
+
+    private fun q(s: String): String {
+        // Safe quoting for FFmpegKit.execute(String)
+        return "'" + s.replace("'", "'\\''") + "'"
     }
 
     private fun resolveWatermarkFile(wm: String): File? {
@@ -310,46 +334,42 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         }
     }
 
-    private fun buildFilter(
-        vw: Int,
-        vh: Int,
-        blurRectsStr: String,
+    private fun buildBlurOverlayFilter(
+        w: Int,
+        h: Int,
+        rectsStr: String,
         hasWm: Boolean,
         wmW: Int,
         wmX: Float,
         wmY: Float
     ): String? {
-        val rects = parseRects(blurRectsStr).mapNotNull { rr ->
-            val x = (rr[0] * vw).roundToInt().coerceIn(0, vw - 2)
-            val y = (rr[1] * vh).roundToInt().coerceIn(0, vh - 2)
-            val w = ((rr[2] - rr[0]) * vw).roundToInt().coerceAtLeast(2).coerceIn(2, vw - x)
-            val h = ((rr[3] - rr[1]) * vh).roundToInt().coerceAtLeast(2).coerceIn(2, vh - y)
-            intArrayOf(x, y, w, h)
+        val rects = parseRects(rectsStr).mapNotNull { rr ->
+            val x = (rr[0] * w).roundToInt().coerceIn(0, w - 2)
+            val y = (rr[1] * h).roundToInt().coerceIn(0, h - 2)
+            val ww = ((rr[2] - rr[0]) * w).roundToInt().coerceAtLeast(2).coerceIn(2, w - x)
+            val hh = ((rr[3] - rr[1]) * h).roundToInt().coerceAtLeast(2).coerceIn(2, h - y)
+            intArrayOf(x, y, ww, hh)
         }
 
-        val (wmPx, wmPy) = computeWatermarkXY(vw, vh, wmW, wmX, wmY)
+        val (wmPx, wmPy) = computeWatermarkXY(w, h, wmW, wmX, wmY)
 
+        // No blur, only watermark
         if (rects.isEmpty()) {
-            return if (hasWm) {
-                "[1:v]scale=${wmW}:-1[wm];[0:v][wm]overlay=${wmPx}:${wmPy}[vout]"
-            } else {
-                // אין בלר ואין WM
-                null
-            }
+            if (!hasWm) return null
+            return "[1:v]scale=${wmW}:-1[wm];[0:v][wm]overlay=${wmPx}:${wmPy}[vout]"
         }
 
         val n = rects.size
         val sb = StringBuilder()
 
         sb.append("[0:v]split=").append(n + 1)
-        for (i in 0 until (n + 1)) sb.append("[v").append(i).append("]")
+        for (i in 0..n) sb.append("[v").append(i).append("]")
         sb.append(";")
 
         for (i in 0 until n) {
             val r = rects[i]
-            val x = r[0]; val y = r[1]; val w = r[2]; val h = r[3]
             sb.append("[v").append(i + 1).append("]")
-            sb.append("crop=").append(w).append(":").append(h).append(":").append(x).append(":").append(y)
+            sb.append("crop=").append(r[2]).append(":").append(r[3]).append(":").append(r[0]).append(":").append(r[1])
             sb.append(",boxblur=10:1")
             sb.append("[b").append(i).append("];")
         }
@@ -357,10 +377,8 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         var base = "[v0]"
         for (i in 0 until n) {
             val r = rects[i]
-            val x = r[0]; val y = r[1]
-            sb.append(base)
-                .append("[b").append(i).append("]")
-                .append("overlay=").append(x).append(":").append(y)
+            sb.append(base).append("[b").append(i).append("]")
+                .append("overlay=").append(r[0]).append(":").append(r[1])
                 .append("[o").append(i).append("];")
             base = "[o$i]"
         }
@@ -410,18 +428,14 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
             val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
             r.release()
             if (w > 0 && h > 0) Pair(w, h) else null
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 
     private fun getImageSize(f: File): Pair<Int, Int>? {
         return try {
-            val opt = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeFile(f.absolutePath, opt)
+            val opt = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.absolutePath, opt)
             if (opt.outWidth > 0 && opt.outHeight > 0) Pair(opt.outWidth, opt.outHeight) else null
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 }
