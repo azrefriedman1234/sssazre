@@ -42,10 +42,11 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val srcMsgId = inputData.getLong(KEY_SRC_MESSAGE_ID, 0L)
         val targetUsername = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
         val text = inputData.getString(KEY_TEXT).orEmpty()
-        // --- caption compat + TDLib formatted caption (single source of truth) ---
-        val captionFt: String = text
-        val captionFormatted = TdApi.FormattedText(captionFt, null)
-        val lp = TdApi.LinkPreviewOptions().apply { isDisabled = true }
+
+        // caption helpers (single source of truth)
+        val captionText: String = text
+        val captionFmt = TdApi.FormattedText(captionText, null)
+        val lpOpts = TdApi.LinkPreviewOptions().apply { isDisabled = true }
 
         // --- caption compat (String) + TDLib formatted caption ---
 
@@ -101,8 +102,8 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
     }
 
     private fun sendText(chatId: Long, text: String): Boolean {
-        val ft = captionFt
-        val content = TdApi.InputMessageText(captionFormatted, lp, false) // <- חתימה נכונה אצלך
+        val ft = captionText
+        val content = TdApi.InputMessageText(captionFmt, lpOpts, false) // <- חתימה נכונה אצלך
         return sendContent(chatId, content)
     }
 
