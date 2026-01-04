@@ -98,7 +98,6 @@ class DetailsActivity : AppCompatActivity() {
         ivPreview = findViewById(R.id.ivPreview)
         ivWatermarkOverlay = findViewById(R.id.ivWatermarkOverlay)
         blurOverlay = findViewById(R.id.blurOverlay)
-        blurOverlay.setDrawEnabled(false)
         tvMeta = findViewById(R.id.tvMeta)
         etCaption = findViewById(R.id.etCaption)
         swSendWithMedia = findViewById(R.id.swSendWithMedia)
