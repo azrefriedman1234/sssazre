@@ -34,6 +34,38 @@ import kotlin.math.min
 
 class DetailsActivity : AppCompatActivity() {
 
+    // ---- Compat: older code may call blurOverlay.setDrawEnabled(...) ----
+    // Stays compile-safe even if BlurOverlayView internals change.
+    private fun BlurOverlayView.setDrawEnabled(enabled: Boolean) {
+        this.isEnabled = enabled
+        // best-effort via reflection to set common flags if exist:
+        trySetBoolField(this, "allowRectangles", enabled)
+        trySetBoolField(this, "blurMode", enabled)
+        this.invalidate()
+    }
+
+    private fun trySetBoolField(obj: Any, name: String, value: Boolean) {
+        // field
+        try {
+            val f = obj.javaClass.getField(name)
+            f.isAccessible = true
+            f.setBoolean(obj, value)
+            return
+        } catch (_: Throwable) {}
+
+        // setter: setXxx(boolean)
+        try {
+            val setter = "set" + name.replaceFirstChar { it.uppercase() }
+            val m = obj.javaClass.methods.firstOrNull {
+                it.name == setter && it.parameterTypes.size == 1 &&
+                    (it.parameterTypes[0] == Boolean::class.java || it.parameterTypes[0] == java.lang.Boolean.TYPE)
+            }
+            m?.invoke(obj, value)
+        } catch (_: Throwable) {}
+    }
+    // ---------------------------------------------------------------
+
+
     companion object {
         const val EXTRA_SRC_CHAT_ID = "src_chat_id"
         const val EXTRA_SRC_MESSAGE_ID = "src_message_id"
