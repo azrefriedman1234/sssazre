@@ -2,102 +2,109 @@ package com.pasiflonet.mobile.ui
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-class BlurOverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
+class BlurOverlayView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
 
     var blurMode: Boolean = false
-    var enabledForImage: Boolean = false
-        private set
+        set(value) {
+            field = value
+            if (!value) current = null
+            invalidate()
+        }
 
     var allowRectangles: Boolean = true
 
-    private val rects = mutableListOf<RectF>()
-    private var downX = 0f
-    private var downY = 0f
-    private var curRect: RectF? = null
+    private val rects = ArrayList<RectF>() // normalized 0..1
+    private var current: RectF? = null
+    private var startX = 0f
+    private var startY = 0f
 
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 4f
-        color = Color.argb(220, 0, 200, 255)
-    }
-
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val paintFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.argb(60, 0, 200, 255)
+        alpha = 60
+    }
+    private val paintStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = context.resources.displayMetrics.density * 2f
+        alpha = 220
     }
 
-    fun setEnabledForImage(v: Boolean) {
-        enabledForImage = v
-        // לא מנקים rects כדי לאפשר לוידאו להשתמש במלבנים שנצייר
+    fun clearAll() {
+        rects.clear()
+        current = null
         invalidate()
     }
 
     fun exportRectsNormalized(): List<RectF> {
-        val w = width.coerceAtLeast(1).toFloat()
-        val h = height.coerceAtLeast(1).toFloat()
-        return rects.map {
-            RectF(
-                (it.left / w).coerceIn(0f, 1f),
-                (it.top / h).coerceIn(0f, 1f),
-                (it.right / w).coerceIn(0f, 1f),
-                (it.bottom / h).coerceIn(0f, 1f)
-            )
-        }
+        return rects.map { RectF(it) }
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        for (r in rects) {
-            canvas.drawRect(r, fillPaint)
-            canvas.drawRect(r, strokePaint)
-        }
-        curRect?.let {
-            canvas.drawRect(it, fillPaint)
-            canvas.drawRect(it, strokePaint)
-        }
-    }
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (!allowRectangles || !blurMode) return false
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!allowRectangles) return false
-        if (!blurMode) return false
-
-        when (event.actionMasked) {
+        when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = event.x
-                downY = event.y
-                curRect = RectF(downX, downY, downX, downY)
+                startX = ev.x
+                startY = ev.y
+                val nx = normX(startX)
+                val ny = normY(startY)
+                current = RectF(nx, ny, nx, ny)
+                parent?.requestDisallowInterceptTouchEvent(true)
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val r = curRect ?: return true
-                r.left = min(downX, event.x)
-                r.top = min(downY, event.y)
-                r.right = max(downX, event.x)
-                r.bottom = max(downY, event.y)
+                val cx = ev.x
+                val cy = ev.y
+                val l = min(normX(startX), normX(cx))
+                val t = min(normY(startY), normY(cy))
+                val r = max(normX(startX), normX(cx))
+                val b = max(normY(startY), normY(cy))
+                current?.set(l, t, r, b)
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val r = curRect
-                curRect = null
-                if (r != null && abs(r.width()) > 10 && abs(r.height()) > 10) {
+                val r = current
+                current = null
+                if (r != null && r.width() > 0.02f && r.height() > 0.02f) {
                     rects.add(r)
                 }
+                parent?.requestDisallowInterceptTouchEvent(false)
                 invalidate()
                 return true
             }
         }
         return false
     }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (!blurMode) return
+
+        val w = width.toFloat().coerceAtLeast(1f)
+        val h = height.toFloat().coerceAtLeast(1f)
+
+        fun drawNorm(r: RectF) {
+            val px = RectF(r.left * w, r.top * h, r.right * w, r.bottom * h)
+            canvas.drawRect(px, paintFill)
+            canvas.drawRect(px, paintStroke)
+        }
+
+        rects.forEach { drawNorm(it) }
+        current?.let { drawNorm(it) }
+    }
+
+    private fun normX(x: Float): Float = (x / width.coerceAtLeast(1)).coerceIn(0f, 1f)
+    private fun normY(y: Float): Float = (y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
 }
