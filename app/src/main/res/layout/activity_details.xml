@@ -84,7 +84,6 @@
 
                 <Space android:layout_width="1dp" android:layout_height="10dp"/>
 
-                <!-- תמיד רואים את המתג; אם אין מדיה הוא יהיה disabled -->
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/swSendWithMedia"
                     android:layout_width="match_parent"
