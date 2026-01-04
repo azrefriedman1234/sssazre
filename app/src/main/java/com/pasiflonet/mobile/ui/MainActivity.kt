@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private val mediaPermLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
-    private val newMsgListener: (TdApi.Object) -> Unit = { obj ->
+    private val newMsgListener: (TdApi.Object) -> Unit = fun(obj: TdApi.Object) {
         val up = obj as? TdApi.UpdateNewMessage ?: return
         val msg = up.message
 
