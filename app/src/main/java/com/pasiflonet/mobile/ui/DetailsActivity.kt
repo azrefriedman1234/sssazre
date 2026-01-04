@@ -110,6 +110,16 @@ class DetailsActivity : AppCompatActivity() {
         etCaption = findViewById(R.id.etCaption)
         swSendWithMedia = findViewById(R.id.swSendWithMedia)
 
+
+        // Always show the toggle. Enable it only if we actually have media (or a hint that media exists).
+        val canSendMedia =
+            (mediaUri != null) ||
+            hasMediaHint ||
+            (!miniThumbB64.isNullOrBlank()) ||
+            (!mediaMime.isNullOrBlank())
+
+        swSendWithMedia.isEnabled = canSendMedia
+        swSendWithMedia.isChecked = canSendMedia
         srcChatId = intent.getLongExtra(EXTRA_SRC_CHAT_ID, 0L)
         srcMsgId = intent.getLongExtra(EXTRA_SRC_MESSAGE_ID, 0L)
         mediaMime = intent.getStringExtra(EXTRA_MEDIA_MIME)
@@ -122,7 +132,6 @@ class DetailsActivity : AppCompatActivity() {
         tvMeta.text = buildMetaString()
 
         val hasMedia = (mediaUri != null) || hasMediaHint || !miniThumbB64.isNullOrBlank() || !mediaMime.isNullOrBlank()
-        swSendWithMedia.visibility = if (hasMedia) View.VISIBLE else View.GONE
         swSendWithMedia.isChecked = hasMedia
 
         setupWatermarkOverlayDrag()
