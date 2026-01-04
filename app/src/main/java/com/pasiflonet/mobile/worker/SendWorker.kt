@@ -17,6 +17,12 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
+    // caption helpers (shared across methods/lambdas)
+    private var captionText: String = ""
+    private var captionFmt: TdApi.FormattedText = TdApi.FormattedText("", null)
+    private var lpOpts: TdApi.LinkPreviewOptions = TdApi.LinkPreviewOptions().apply { isDisabled = true }
+
+
 
     companion object {
         const val KEY_SRC_CHAT_ID = "src_chat_id"
@@ -43,10 +49,11 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val targetUsername = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
         val text = inputData.getString(KEY_TEXT).orEmpty()
 
+        captionText = text
+        captionFmt = TdApi.FormattedText(captionText, null)
+        lpOpts = TdApi.LinkPreviewOptions().apply { isDisabled = true }
+
         // caption helpers (single source of truth)
-        val captionText: String = text
-        val captionFmt = TdApi.FormattedText(captionText, null)
-        val lpOpts = TdApi.LinkPreviewOptions().apply { isDisabled = true }
 
         // --- caption compat (String) + TDLib formatted caption ---
 
