@@ -1,6 +1,7 @@
 package com.pasiflonet.mobile.worker
 
 import android.content.Context
+import android.util.Log
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -103,36 +104,17 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
             wmY = wmY
         ) ?: tdMedia.file
 
-        val inputFile = TdApi.InputFileLocal(finalFile.absolutePath)
-        val content: TdApi.InputMessageContent = when (tdMedia.kind) {
-            Kind.PHOTO -> TdApi.InputMessagePhoto().apply { photo = inputFile; this.caption = caption }
-            Kind.VIDEO -> TdApi.InputMessageVideo().apply { video = inputFile; this.caption = caption; supportsStreaming = true }
-            Kind.DOCUMENT -> TdApi.InputMessageDocument().apply { document = inputFile; this.caption = caption }
+        val inputFile = TdApi.InputFileLocal(
+        // ✅ NO TEXT FALLBACK: אם ביקשו מדיה – שולחים תמיד קובץ (גם אם זה תמונה/וידאו)
+        if (!finalFile.exists() || finalFile.length() <= 0L) {
+            Log.e("SendWorker", "finalFile missing/empty -> abort (no text fallback)")
+            return Result.failure()
         }
 
-        val res = sendContent(targetChatId, content)
+        val captionFt = TdApi.FormattedText(text, null)
+        val content = TdApi.InputMessageDocument(inputFile, null, false, captionFt)
 
-        // Cleanup ONLY cache files we created
-        runCatching { if (finalFile.parentFile == applicationContext.cacheDir) finalFile.delete() }
-        runCatching { if (tdMedia.file.parentFile == applicationContext.cacheDir) tdMedia.file.delete() }
-
-        return res
-    }
-
-    private fun resolvePublicChatId(username: String): Long? {
-        val latch = CountDownLatch(1)
-        var chatId: Long? = null
-        TdLibManager.send(TdApi.SearchPublicChat(username)) { obj ->
-            if (obj is TdApi.Chat) chatId = obj.id
-            latch.countDown()
-        }
-        if (!latch.await(25, TimeUnit.SECONDS)) return null
-        return chatId
-    }
-
-    private fun sendContent(chatId: Long, content: TdApi.InputMessageContent): Result {
-        val latch = CountDownLatch(1)
-        var ok = false
+ var ok = false
         TdLibManager.send(TdApi.SendMessage(chatId, null, null, null, null, content)) { obj ->
             ok = (obj is TdApi.Message)
             latch.countDown()
