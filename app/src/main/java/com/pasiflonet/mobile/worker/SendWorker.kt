@@ -19,10 +19,11 @@ import java.util.concurrent.TimeUnit
 
 class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appContext, params) {
 
-    // --- FIX: TDLib caption/link-preview vars (avoid unresolved refs / reassignment errors)
+    // Caption plumbing (stable): keep text as String, expose FormattedText via getter
     private var captionText: String = ""
-    private var captionFmt: TdApi.FormattedText = TdApi.FormattedText("", null)
-    private val captionFmt: TdApi.FormattedText get() = captionFmt
+    private val captionFmt: TdApi.FormattedText get() = TdApi.FormattedText(captionText, null)
+
+    // --- FIX: TDLib caption/link-preview vars (avoid unresolved refs / reassignment errors)
     private val lpOpts: TdApi.LinkPreviewOptions = TdApi.LinkPreviewOptions()
     private val lp: TdApi.LinkPreviewOptions = lpOpts
     companion object {
@@ -56,7 +57,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             val sendWithMedia = inputData.getBoolean(KEY_SEND_WITH_MEDIA, true)
 
         captionText = inputData.getString(KEY_TEXT).orEmpty()
-        captionFmt = TdApi.FormattedText(captionText, null)
+        captionText = captionText
             var watermarkUriStr = inputData.getString(KEY_WATERMARK_URI).orEmpty().trim()
             var blurRectsStr = inputData.getString(KEY_BLUR_RECTS).orEmpty().trim()
             val wmX = inputData.getFloat(KEY_WM_X, -1f)
