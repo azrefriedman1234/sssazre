@@ -82,8 +82,7 @@ class MainActivity : AppCompatActivity() {
                 text = m.text,
                 mediaUri = null,
                 mediaMime = m.mediaMime,
-                miniThumbB64 = m.miniThumbB64,
-                hasMediaHint = m.hasMedia
+                miniThumbB64 = m.miniThumbB64
             )
         }
 
