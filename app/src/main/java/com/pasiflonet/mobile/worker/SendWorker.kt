@@ -50,7 +50,6 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val text = inputData.getString(KEY_TEXT).orEmpty()
 
         captionText = text
-        captionFmt = TdApi.FormattedText(captionText, null)
         lpOpts = TdApi.LinkPreviewOptions().apply { isDisabled = true }
 
         // caption helpers (single source of truth)
