@@ -50,7 +50,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val srcMsgId = inputData.getLong(KEY_SRC_MESSAGE_ID, 0L)
         val targetUsernameRaw = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
         val text = inputData.getString(KEY_TEXT).orEmpty()
-        val sendWithMedia = inputData.getBoolean(KEY_SEND_WITH_MEDIA, false)
+        val sendWithMedia = inputData.getBoolean(KEY_SEND_WITH_MEDIA, true)
 
         val mediaUriStr = inputData.getString(KEY_MEDIA_URI).orEmpty().trim()
         val mediaMimeIn = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
