@@ -166,4 +166,60 @@ TdLibManager.addUpdateListener(newMsgListener)
         return deleted
     }
 
+
+    // ---- Compat: provide extractUiFields expected by live-update collector ----
+    private data class Extracted(
+        val from: String,
+        val text: String,
+        val hasMedia: Boolean,
+        val mime: String?,
+        val thumb: String?
+    )
+
+    private fun extractUiFields(msg: TdApi.Message): Extracted {
+        val from = when (val s = msg.senderId) {
+            is TdApi.MessageSenderUser -> "user:${'$'}{s.userId}"
+            is TdApi.MessageSenderChat -> "chat:${'$'}{s.chatId}"
+            else -> "?"
+        }
+
+        val c = msg.content
+        val hasMedia = c != null && c.constructor != TdApi.MessageText.CONSTRUCTOR
+
+        val text = when (c) {
+            is TdApi.MessageText -> c.text?.text.orEmpty()
+            is TdApi.MessagePhoto -> c.caption?.text?.takeIf { it.isNotBlank() } ?: "[PHOTO]"
+            is TdApi.MessageVideo -> c.caption?.text?.takeIf { it.isNotBlank() } ?: "[VIDEO]"
+            is TdApi.MessageAnimation -> c.caption?.text?.takeIf { it.isNotBlank() } ?: "[ANIMATION]"
+            is TdApi.MessageDocument -> c.caption?.text?.takeIf { it.isNotBlank() } ?: "[DOCUMENT]"
+            else -> "[${'$'}{c?.javaClass?.simpleName ?: "UNKNOWN"}]"
+        }.let { if (it.length > 2000) it.take(2000) + "…" else it }
+
+        val mime: String? = when (c) {
+            is TdApi.MessageVideo -> c.video?.mimeType
+            is TdApi.MessageAnimation -> c.animation?.mimeType
+            is TdApi.MessageDocument -> c.document?.mimeType
+            is TdApi.MessagePhoto -> "image/jpeg"
+            else -> null
+        }
+
+        // thumb best-effort without hard dependency (avoid compile issues)
+        val carrier: Any? = when (c) {
+            is TdApi.MessagePhoto -> c.photo
+            is TdApi.MessageVideo -> c.video
+            is TdApi.MessageAnimation -> c.animation
+            is TdApi.MessageDocument -> c.document
+            else -> null
+        }
+
+        val thumb: String? = runCatching {
+            val cls = Class.forName("com.pasiflonet.mobile.util.TdThumb")
+            val m = cls.getMethod("extractMiniThumbB64", Any::class.java)
+            m.invoke(null, carrier) as? String
+        }.getOrNull()
+
+        return Extracted(from, text, hasMedia, mime, thumb)
+    }
+    // -----------------------------------------------------------------------
+
 }
