@@ -355,10 +355,10 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             val bl = "bl$i"
             val out = "v${i + 1}"
 
-            val xCrop = "max(0,${r.l}*iw)"
-            val yCrop = "max(0,${r.t}*ih)"
-            val wCrop = "max(1,(${r.r}-${r.l})*iw)"
-            val hCrop = "max(1,(${r.b}-${r.t})*ih)"
+            val xCrop = "max(0,${r.l}*(main_w-overlay_w))"
+            val yCrop = "max(0,${r.t}*(main_h-overlay_h))"
+            val wCrop = "max(1,(${r.r}-${r.l})*(main_w-overlay_w))"
+            val hCrop = "max(1,(${r.b}-${r.t})*(main_h-overlay_h))"
 
             val xOv = "max(0,${r.l}*main_w)"
             val yOv = "max(0,${r.t}*main_h)"
