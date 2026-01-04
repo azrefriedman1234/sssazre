@@ -39,7 +39,9 @@ object TdLibManager {
 
             try {
                 for (l in listeners) l(obj)
-            } catch (t: Throwable) {
+            
+            notifyAuthState(update.authorizationState)
+} catch (t: Throwable) {
                 Log.e(TAG, "listener crash", t)
             }
         }
@@ -67,4 +69,19 @@ object TdLibManager {
 
         c.send(f, Client.ResultHandler { obj -> cb(obj) })
     }
+
+    // === authState helper (for Login/Main) ===
+    private val authListeners = java.util.concurrent.CopyOnWriteArrayList<(TdApi.AuthorizationState) -> Unit>()
+    @Volatile private var lastAuthState: TdApi.AuthorizationState? = null
+
+    fun authState(cb: (TdApi.AuthorizationState) -> Unit) {
+        lastAuthState?.let(cb)
+        authListeners.add(cb)
+    }
+
+    private fun notifyAuthState(state: TdApi.AuthorizationState) {
+        lastAuthState = state
+        for (l in authListeners) runCatching { l(state) }
+    }
+
 }

@@ -23,6 +23,7 @@ import com.pasiflonet.mobile.R
 import com.pasiflonet.mobile.data.AppPrefs
 import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.worker.SendWorker
+import com.pasiflonet.mobile.util.translateToHebrewCompat
 import com.pasiflonet.mobile.util.TranslateUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,7 +50,8 @@ class DetailsActivity : AppCompatActivity() {
             text: String,
             mediaUri: String? = null,
             mediaMime: String? = null,
-            miniThumbB64: String? = null
+            miniThumbB64: String? = null,
+            hasMediaHint: Boolean = false
         ) {
             val i = Intent(ctx, DetailsActivity::class.java)
             i.putExtra(EXTRA_SRC_CHAT_ID, chatId)
