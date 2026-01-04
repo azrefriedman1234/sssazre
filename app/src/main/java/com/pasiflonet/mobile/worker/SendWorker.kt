@@ -333,10 +333,29 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
         sendContent(chatId, content)
     }
 
-    private fun sendContent(chatId: Long, content: TdApi.InputMessageContent) {
+    
+    private fun setField(obj: Any, name: String, value: Any?) {
+        try {
+            val f = obj.javaClass.getField(name)
+            f.isAccessible = true
+            f.set(obj, value)
+        } catch (_: Throwable) { }
+    }
+
+private fun sendContent(chatId: Long, content: TdApi.InputMessageContent) {
         val latch = CountDownLatch(1)
         var ok = false
-        TdLibManager.send(TdApi.SendMessage(chatId, 0L, null, null, null, content)) { obj ->
+        val req = TdApi.SendMessage()
+        // TDLib משתנה בין גרסאות: לפעמים messageTopic, לפעמים messageThreadId
+        setField(req, "chatId", chatId)
+        setField(req, "messageThreadId", 0L)
+        setField(req, "messageTopic", null)
+        setField(req, "replyTo", null)
+        setField(req, "options", null)
+        setField(req, "replyMarkup", null)
+        setField(req, "inputMessageContent", content)
+
+        TdLibManager.send(req) { obj ->
             ok = (obj is TdApi.Message) || (obj is TdApi.Ok)
             if (!ok && obj is TdApi.Error) {
                 AppLog.e(applicationContext, "SendMessage error: ${obj.code} ${obj.message}")
