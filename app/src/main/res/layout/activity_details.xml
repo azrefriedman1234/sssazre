@@ -35,8 +35,7 @@
         <com.pasiflonet.mobile.ui.BlurOverlayView
             android:id="@+id/blurOverlay"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
+            android:layout_height="match_parent"/>
     </FrameLayout>
 
     <LinearLayout
@@ -50,7 +49,6 @@
         app:layout_constraintBottom_toBottomOf="parent">
 
         <androidx.core.widget.NestedScrollView
-            android:id="@+id/scrollArea"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
@@ -65,7 +63,6 @@
                     android:id="@+id/tvMeta"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Meta"
                     android:textSize="13sp"
                     android:alpha="0.85"
                     android:paddingBottom="8dp"/>
@@ -85,10 +82,9 @@
                         android:hint="טקסט לשליחה / כיתוב"/>
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <Space
-                    android:layout_width="1dp"
-                    android:layout_height="10dp"/>
+                <Space android:layout_width="1dp" android:layout_height="10dp"/>
 
+                <!-- תמיד רואים את המתג; אם אין מדיה הוא יהיה disabled -->
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/swSendWithMedia"
                     android:layout_width="match_parent"
@@ -96,9 +92,7 @@
                     android:text="שלח עם מדיה (אם קיימת)"
                     android:checked="true"/>
 
-                <Space
-                    android:layout_width="1dp"
-                    android:layout_height="12dp"/>
+                <Space android:layout_width="1dp" android:layout_height="12dp"/>
 
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
@@ -120,9 +114,7 @@
                     android:layout_weight="1"
                     android:text="סימן מים"/>
 
-                <Space
-                    android:layout_width="10dp"
-                    android:layout_height="1dp"/>
+                <Space android:layout_width="10dp" android:layout_height="1dp"/>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBlur"
@@ -142,11 +134,9 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="תרגום"/>
+                    android:text="תרגום אונליין"/>
 
-                <Space
-                    android:layout_width="10dp"
-                    android:layout_height="1dp"/>
+                <Space android:layout_width="10dp" android:layout_height="1dp"/>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSend"
@@ -155,7 +145,6 @@
                     android:layout_weight="1"
                     android:text="שלח"/>
             </LinearLayout>
-
         </LinearLayout>
     </LinearLayout>
 
