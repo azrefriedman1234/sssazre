@@ -4,10 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.work.Data
@@ -23,8 +26,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
+import kotlin.math.min
 
 class DetailsActivity : AppCompatActivity() {
 
@@ -43,6 +49,8 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private lateinit var ivPreview: ImageView
+    private lateinit var ivWatermarkOverlay: ImageView
+    private lateinit var previewFrame: View
     private lateinit var blurOverlay: BlurOverlayView
     private lateinit var tvMeta: TextView
     private lateinit var etCaption: com.google.android.material.textfield.TextInputEditText
@@ -54,6 +62,11 @@ class DetailsActivity : AppCompatActivity() {
     private var hasMedia: Boolean = false
     private var mediaMime: String? = null
 
+    // watermark normalized position (center) 0..1; -1 = default
+    private var wmXNorm: Float = -1f
+    private var wmYNorm: Float = -1f
+    private val sp by lazy { getSharedPreferences("pasiflonet_prefs", MODE_PRIVATE) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_details)
@@ -64,33 +77,44 @@ class DetailsActivity : AppCompatActivity() {
         etCaption = findViewById(R.id.etCaption)
         swSendWithMedia = findViewById(R.id.swSendWithMedia)
 
+        previewFrame = findViewById(R.id.previewFrame)
+        ivWatermarkOverlay = findViewById(R.id.ivWatermarkOverlay)
+
         srcChatId = intent.getLongExtra(EXTRA_SRC_CHAT_ID, 0L)
         srcMsgId = intent.getLongExtra(EXTRA_SRC_MESSAGE_ID, 0L)
         etCaption.setText(intent.getStringExtra(EXTRA_TEXT).orEmpty())
 
-        // always visible
+        // Close button MUST work
+        val closeId = resources.getIdentifier("btnClose", "id", packageName)
+        if (closeId != 0) {
+            findViewById<View>(closeId).setOnClickListener { finish() }
+        }
+
+        // always visible toggle (enabled only if media exists)
         swSendWithMedia.visibility = View.VISIBLE
         swSendWithMedia.isEnabled = false
         swSendWithMedia.isChecked = false
 
-        // ensure overlay is on top
-        blurOverlay.visibility = View.VISIBLE
-        blurOverlay.bringToFront()
-        blurOverlay.invalidate()
+        // keep overlay on top
+        try { blurOverlay.bringToFront() } catch (_: Throwable) {}
+        try { ivWatermarkOverlay.bringToFront() } catch (_: Throwable) {}
 
         findViewById<View>(R.id.btnBlur).setOnClickListener {
-            // best-effort: depending on your BlurOverlayView implementation
-            try { blurOverlay.bringToFront() } catch (_: Throwable) {}
-            try { blurOverlay.invalidate() } catch (_: Throwable) {}
-            Snackbar.make(ivPreview, "גרור מלבן על התמונה לטשטוש (אם תומך).", Snackbar.LENGTH_SHORT).show()
+            // אם BlurOverlayView תומך במצב ציור, ננסה לקרוא לזה בצורה "בטוחה"
+            runCatching { blurOverlay.setDrawEnabled(true) }
+            runCatching { blurOverlay.bringToFront() }
+            runCatching { blurOverlay.invalidate() }
+            Snackbar.make(ivPreview, "גרור מלבן על התמונה לטשטוש.", Snackbar.LENGTH_SHORT).show()
         }
 
         findViewById<View>(R.id.btnWatermark).setOnClickListener {
-            Snackbar.make(ivPreview, "✅ סימן מים מוחל בשליחה (FFmpeg) לפי ההגדרות.", Snackbar.LENGTH_LONG).show()
+            // מציג watermark ומאפשר גרירה
+            ensureWatermarkPreview()
+            Toast.makeText(this, "גרור את סימן המים למיקום הרצוי", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<View>(R.id.btnTranslate).setOnClickListener {
-            Snackbar.make(ivPreview, "ℹ️ תרגום כרגע לא נוגע כדי לא לשבור קומפילציה. נטפל אחרי שהבנייה יציבה.", Snackbar.LENGTH_LONG).show()
+            Snackbar.make(ivPreview, "ℹ️ תרגום לא נוגע כרגע כדי לא לשבור. קודם מייצבים מדיה/שליחה.", Snackbar.LENGTH_LONG).show()
         }
 
         findViewById<View>(R.id.btnSend).setOnClickListener { enqueueSendAndReturn() }
@@ -99,6 +123,10 @@ class DetailsActivity : AppCompatActivity() {
         TdLibManager.ensureClient()
 
         tvMeta.text = "chatId=$srcChatId | msgId=$srcMsgId\nיעד: ${AppPrefs.getTargetUsername(this).ifBlank { "(לא הוגדר)" }}"
+
+        // load saved watermark position
+        wmXNorm = sp.getFloat("wm_x_norm", -1f)
+        wmYNorm = sp.getFloat("wm_y_norm", -1f)
 
         lifecycleScope.launch(Dispatchers.IO) {
             val msg = fetchMessageSync(srcChatId, srcMsgId)
@@ -119,11 +147,15 @@ class DetailsActivity : AppCompatActivity() {
             runOnUiThread {
                 swSendWithMedia.isEnabled = hasMedia
                 swSendWithMedia.isChecked = hasMedia
+
                 if (bmp != null) ivPreview.setImageBitmap(bmp)
                 else ivPreview.setImageResource(android.R.drawable.ic_menu_report_image)
 
-                val extra = "\nmedia=" + (if (hasMedia) "YES" else "NO") + (mediaMime?.let { " ($it)" } ?: "")
-                tvMeta.text = tvMeta.text.toString() + extra
+                tvMeta.text = tvMeta.text.toString() +
+                        "\nmedia=" + (if (hasMedia) "YES" else "NO") + (mediaMime?.let { " ($it)" } ?: "")
+
+                // show watermark overlay immediately if configured
+                ensureWatermarkPreview()
             }
         }
     }
@@ -201,6 +233,142 @@ class DetailsActivity : AppCompatActivity() {
         return null
     }
 
+    private fun ensureWatermarkPreview() {
+        val wm = AppPrefs.getWatermark(this).trim()
+        if (wm.isBlank()) {
+            ivWatermarkOverlay.visibility = View.GONE
+            return
+        }
+
+        val bmp = loadWatermarkBitmap(wm) ?: run {
+            ivWatermarkOverlay.visibility = View.GONE
+            return
+        }
+
+        ivWatermarkOverlay.setImageBitmap(bmp)
+        ivWatermarkOverlay.visibility = View.VISIBLE
+
+        // size + position after layout
+        previewFrame.post {
+            val frameW = previewFrame.width
+            val frameH = previewFrame.height
+            if (frameW <= 0 || frameH <= 0) return@post
+
+            val targetW = max((frameW * 0.22f).toInt(), 90)
+            val lp = ivWatermarkOverlay.layoutParams
+            lp.width = targetW
+            lp.height = targetW
+            ivWatermarkOverlay.layoutParams = lp
+
+            // default position or saved
+            if (wmXNorm in 0f..1f && wmYNorm in 0f..1f) {
+                placeWatermarkByNorm(wmXNorm, wmYNorm)
+            } else {
+                // bottom-right default
+                val x = (frameW - ivWatermarkOverlay.width - 16).toFloat().coerceAtLeast(0f)
+                val y = (frameH - ivWatermarkOverlay.height - 16).toFloat().coerceAtLeast(0f)
+                ivWatermarkOverlay.x = x
+                ivWatermarkOverlay.y = y
+                updateNormFromOverlay()
+            }
+
+            enableWatermarkDrag()
+            ivWatermarkOverlay.bringToFront()
+            blurOverlay.bringToFront() // blur needs to stay above preview too
+        }
+    }
+
+    private fun loadWatermarkBitmap(wm: String): Bitmap? {
+        return try {
+            val uri = Uri.parse(wm)
+            when (uri.scheme?.lowercase()) {
+                "content" -> {
+                    contentResolver.openInputStream(uri).use { ins ->
+                        if (ins == null) return null
+                        BitmapFactory.decodeStream(ins)
+                    }
+                }
+                "file" -> {
+                    val f = File(uri.path ?: return null)
+                    if (!f.exists()) return null
+                    BitmapFactory.decodeFile(f.absolutePath)
+                }
+                else -> {
+                    val f = File(wm)
+                    if (!f.exists()) return null
+                    BitmapFactory.decodeFile(f.absolutePath)
+                }
+            }
+        } catch (_: Throwable) {
+            val f = File(wm)
+            if (!f.exists()) null else BitmapFactory.decodeFile(f.absolutePath)
+        }
+    }
+
+    private fun enableWatermarkDrag() {
+        var startX = 0f
+        var startY = 0f
+        var downRawX = 0f
+        var downRawY = 0f
+
+        ivWatermarkOverlay.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = v.x
+                    startY = v.y
+                    downRawX = e.rawX
+                    downRawY = e.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - downRawX
+                    val dy = e.rawY - downRawY
+                    val frameW = previewFrame.width.toFloat()
+                    val frameH = previewFrame.height.toFloat()
+
+                    val maxX = max(0f, frameW - v.width)
+                    val maxY = max(0f, frameH - v.height)
+
+                    v.x = min(max(0f, startX + dx), maxX)
+                    v.y = min(max(0f, startY + dy), maxY)
+                    updateNormFromOverlay()
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    // save
+                    sp.edit().putFloat("wm_x_norm", wmXNorm).putFloat("wm_y_norm", wmYNorm).apply()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun placeWatermarkByNorm(nx: Float, ny: Float) {
+        val frameW = previewFrame.width.toFloat()
+        val frameH = previewFrame.height.toFloat()
+        val w = ivWatermarkOverlay.width.toFloat()
+        val h = ivWatermarkOverlay.height.toFloat()
+        if (frameW <= 0 || frameH <= 0 || w <= 0 || h <= 0) return
+
+        val cx = nx * frameW
+        val cy = ny * frameH
+        val x = (cx - w / 2f).coerceIn(0f, max(0f, frameW - w))
+        val y = (cy - h / 2f).coerceIn(0f, max(0f, frameH - h))
+        ivWatermarkOverlay.x = x
+        ivWatermarkOverlay.y = y
+        updateNormFromOverlay()
+    }
+
+    private fun updateNormFromOverlay() {
+        val frameW = previewFrame.width.toFloat().takeIf { it > 0 } ?: return
+        val frameH = previewFrame.height.toFloat().takeIf { it > 0 } ?: return
+        val cx = ivWatermarkOverlay.x + ivWatermarkOverlay.width / 2f
+        val cy = ivWatermarkOverlay.y + ivWatermarkOverlay.height / 2f
+        wmXNorm = (cx / frameW).coerceIn(0f, 1f)
+        wmYNorm = (cy / frameH).coerceIn(0f, 1f)
+    }
+
     private fun enqueueSendAndReturn() {
         val target = AppPrefs.getTargetUsername(this).trim()
         if (target.isBlank()) {
@@ -231,8 +399,8 @@ class DetailsActivity : AppCompatActivity() {
             .putString(SendWorker.KEY_MEDIA_MIME, mediaMime.orEmpty())
             .putString(SendWorker.KEY_WATERMARK_URI, AppPrefs.getWatermark(this).trim())
             .putString(SendWorker.KEY_BLUR_RECTS, rectsStr)
-            .putFloat(SendWorker.KEY_WM_X, -1f)
-            .putFloat(SendWorker.KEY_WM_Y, -1f)
+            .putFloat(SendWorker.KEY_WM_X, wmXNorm)
+            .putFloat(SendWorker.KEY_WM_Y, wmYNorm)
             .build()
 
         val req = OneTimeWorkRequestBuilder<SendWorker>()
@@ -240,7 +408,7 @@ class DetailsActivity : AppCompatActivity() {
             .build()
 
         WorkManager.getInstance(applicationContext).enqueue(req)
-        Snackbar.make(ivPreview, "✅ נשלח לתור. חוזר לטבלה…", Snackbar.LENGTH_SHORT).show()
+        Toast.makeText(this, "✅ נשלח. חוזר לטבלה…", Toast.LENGTH_SHORT).show()
         finish()
     }
 }
