@@ -49,9 +49,9 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
         val targetUsername = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
         val text = inputData.getString(KEY_TEXT).orEmpty()
 
-        val captionText = text
+        var captionText = text
         val captionFmt = TdApi.FormattedText(captionText, null)
-        val lpOpts = TdApi.LinkPreviewOptions().apply { isDisabled = true }
+        var lpOpts = TdApi.LinkPreviewOptions().apply { isDisabled = true }
 
         // FIX: removed bad reassignment -> 
         captionText = text
@@ -92,7 +92,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
 
         val editedFile = tryEdit(originalFile, media.kind, rects, wmFile, wmX, wmY, outBase) ?: originalFile
 
-        val ok = sendMedia(chatId, media.kind, editedFile, text)
+        var ok = sendMedia(chatId, media.kind, editedFile, text)
         safeCleanup(tmpDir)
 
         return if (ok) Result.success() else Result.retry()
