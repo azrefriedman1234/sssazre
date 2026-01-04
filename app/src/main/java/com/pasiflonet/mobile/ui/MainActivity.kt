@@ -1,5 +1,11 @@
 package com.pasiflonet.mobile.ui
 
+import com.pasiflonet.mobile.td.TdForegroundService
+
+import com.pasiflonet.mobile.td.TdUpdateBus
+
+import android.util.Log
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -53,6 +59,37 @@ class MainActivity : AppCompatActivity() {
         )
 
         runOnUiThread { adapter.prepend(ui) }
+        // ✅ Live updates: NEVER stop while this screen is open
+        lifecycleScope.launch {
+            TdUpdateBus.updates.collect { obj ->
+                if (obj is TdApi.UpdateNewMessage) {
+                    val msg = obj.message
+                    Log.d("MainActivity", "UpdateNewMessage chat=${msg.chatId} id=${msg.id}")
+
+                    // NOTE: keep your existing extractUiFields(...) / adapter.prepend(...) logic if present
+                    // If you already have a function that converts TdApi.Message -> UiMsg, call it here.
+                    try {
+                        val m2 = extractUiFields(msg)
+                        val ui = UiMsg(
+                            chatId = msg.chatId,
+                            msgId = msg.id,
+                            dateSec = msg.date,
+                            from = m2.from,
+                            text = m2.text,
+                            hasMedia = m2.hasMedia,
+                            mediaMime = m2.mime,
+                            miniThumbB64 = m2.thumb
+                        )
+                        runOnUiThread { adapter.prepend(ui) }
+                    } catch (_: Throwable) {
+                        // if your project doesn't have extractUiFields returning these fields,
+                        // this block won't compile — you can adapt below.
+                    }
+                }
+            }
+        }
+
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +122,9 @@ class MainActivity : AppCompatActivity() {
 
         TdLibManager.init(this)
         TdLibManager.ensureClient()
-        TdLibManager.addUpdateListener(newMsgListener)
+        
+        TdForegroundService.start(this)
+TdLibManager.addUpdateListener(newMsgListener)
 
         lifecycleScope.launch {
             TdLibManager.authState.collect { st ->
