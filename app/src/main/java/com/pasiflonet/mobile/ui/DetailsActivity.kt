@@ -1,5 +1,13 @@
 package com.pasiflonet.mobile.ui
 
+import java.util.concurrent.TimeUnit
+
+import java.util.concurrent.CountDownLatch
+
+import org.drinkless.tdlib.TdApi
+
+import com.pasiflonet.mobile.td.TdLibManager
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
@@ -107,6 +115,11 @@ class DetailsActivity : AppCompatActivity() {
         etCaption = findViewById(R.id.etCaption)
         swSendWithMedia = findViewById(R.id.swSendWithMedia)
 
+        // Always show toggle; default ON so we don't accidentally send text-only
+        swSendWithMedia.visibility = View.VISIBLE
+        swSendWithMedia.isChecked = true
+        swSendWithMedia.text = "שלח עם מדיה (יביא מהטלגרם אם צריך)"
+
         val hasMedia = (mediaUri != null) || hasMediaHint || (!miniThumbB64.isNullOrBlank()) || (!mediaMime.isNullOrBlank())
         swSendWithMedia.visibility = if (hasMedia) View.VISIBLE else View.GONE
         swSendWithMedia.isChecked = hasMedia
@@ -126,6 +139,27 @@ class DetailsActivity : AppCompatActivity() {
         etCaption.setText(text)
 
         tvMeta.text = buildMetaString()
+
+        // Pull real message from TDLib (so we know if it has media + we can show minithumb preview)
+        Thread {
+            val msg = fetchMessageSync(srcChatId, srcMsgId)
+            if (msg != null) {
+                val (hasMedia, thumbB64) = extractMiniThumbB64FromMessage(msg)
+                if (miniThumbB64.isNullOrBlank() && !thumbB64.isNullOrBlank()) {
+                    miniThumbB64 = thumbB64
+                }
+                runOnUiThread {
+                    swSendWithMedia.visibility = View.VISIBLE
+                    swSendWithMedia.isChecked = hasMedia
+                    if (mediaUri == null && workingBitmap == null) {
+                        val bmp = decodeMiniThumbCompat(miniThumbB64)
+                        if (bmp != null) ivPreview.setImageBitmap(bmp)
+                    }
+                    tvMeta.text = buildMetaString()
+                }
+            }
+        }.start()
+
 
         setupWatermarkOverlayDrag()
         loadPreview()
@@ -424,8 +458,7 @@ class DetailsActivity : AppCompatActivity() {
 
         val rects = blurOverlay.exportRectsNormalized()
         val rectsStr = rects.joinToString(";") { "${it.left},${it.top},${it.right},${it.bottom}" }
-        val sendWithMedia =
-            if (swSendWithMedia.visibility == View.VISIBLE) swSendWithMedia.isChecked
+        val sendWithMedia = swSendWithMedia.isChecked
             else (hasMediaHint || mediaUri != null || !miniThumbB64.isNullOrBlank() || !mediaMime.isNullOrBlank())
 
 
@@ -630,6 +663,37 @@ class DetailsActivity : AppCompatActivity() {
                 // ignore
             }
         }.start()
+    }
+
+
+
+    private fun extractMiniThumbB64FromMessage(msg: TdApi.Message): Pair<Boolean, String?> {
+        val c = msg.content ?: return Pair(false, null)
+        val hasMedia = c.constructor != TdApi.MessageText.CONSTRUCTOR
+
+        val carrier: Any? = when (c) {
+            is TdApi.MessagePhoto -> c.photo
+            is TdApi.MessageVideo -> c.video
+            is TdApi.MessageAnimation -> c.animation
+            is TdApi.MessageDocument -> c.document
+            else -> null
+        }
+        if (carrier == null) return Pair(hasMedia, null)
+
+        fun getField(obj: Any, name: String): Any? = try {
+            val f = obj.javaClass.getField(name)
+            f.isAccessible = true
+            f.get(obj)
+        } catch (_: Throwable) { null }
+
+        val mt = getField(carrier, "minithumbnail")
+            ?: getField(carrier, "miniThumbnail")
+            ?: getField(carrier, "minithumb")
+
+        val data = (mt?.let { getField(it, "data") } as? ByteArray) ?: return Pair(hasMedia, null)
+        if (data.isEmpty()) return Pair(hasMedia, null)
+
+        return Pair(hasMedia, Base64.encodeToString(data, Base64.NO_WRAP))
     }
 
 }
