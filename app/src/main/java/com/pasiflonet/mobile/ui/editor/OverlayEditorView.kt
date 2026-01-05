@@ -48,16 +48,6 @@ private val blurPaint = Paint().apply {
         try { invalidate() } catch (_: Throwable) {}
     }
     // PAS_FORCE_DRAW_END
-
-
-    data class RectF(val l: Float, val t: Float, val r: Float, val b: Float) {
-        fun norm(): RectF {
-            val ll = min(l, r).coerceIn(0f, 1f)
-            val rr = max(l, r).coerceIn(0f, 1f)
-            val tt = min(t, b).coerceIn(0f, 1f)
-            val bb = max(t, b).coerceIn(0f, 1f)
-            return RectF(ll, tt, rr, bb)
-        }
     }
 
     data class OverlayState(
