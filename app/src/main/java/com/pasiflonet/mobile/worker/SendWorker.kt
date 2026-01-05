@@ -45,6 +45,32 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     private data class RectN(val l: Float, val t: Float, val r: Float, val b: Float)
 
     override fun doWork(): Result {
+        // PAS_SENDWORKER_LOG_V1
+        val logDir = java.io.File(applicationContext.getExternalFilesDir(null), "pasiflonet_logs").apply { mkdirs() }
+        val logFile = java.io.File(logDir, "send_${System.currentTimeMillis()}.log")
+        val tail = java.util.ArrayDeque<String>(240)
+
+        fun pushLine(line: String) {
+            kotlin.runCatching { logFile.appendText(line + "\n") }
+            if (tail.size >= 240) tail.removeFirst()
+            tail.addLast(line.take(500))
+            val joined = tail.joinToString("\n")
+            kotlin.runCatching { setProgressAsync(androidx.work.workDataOf(KEY_LOG_TAIL to joined)) }
+        }
+
+        // Attach FFmpegKit log callbacks (live)
+        kotlin.runCatching {
+            com.arthenica.ffmpegkit.FFmpegKitConfig.enableLogCallback { l ->
+                try { pushLine("FFMPEG: " + (l.message ?: "")) } catch (_: Throwable) {}
+            }
+            com.arthenica.ffmpegkit.FFmpegKitConfig.enableStatisticsCallback { st ->
+                try { pushLine("STAT: t=" + st.time + " ms, size=" + st.size + ", bitrate=" + st.bitrate + ", speed=" + st.speed) } catch (_: Throwable) {}
+            }
+        }
+
+        try {
+            pushLine("=== SendWorker started ===")
+
         val logFile = File(applicationContext.cacheDir, "ffmpeg_${System.currentTimeMillis()}.log")
         val tail = ArrayDeque<String>(200)
 
@@ -213,6 +239,21 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             pushLine("=== FAILED: $msg ===")
             return Result.failure(
                 workDataOf(
+                    KEY_ERROR_MSG to msg,
+                    KEY_LOG_FILE to logFile.absolutePath,
+                    KEY_LOG_TAIL to tail.joinToString("\n")
+                )
+            )
+        }
+
+
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "SendWorker crash", t)
+            val msg = (t.message ?: t.javaClass.simpleName).take(300)
+            try { pushLine("=== FAILED: " + msg + " ===") } catch (_: Throwable) {}
+            try { pushLine(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            return Result.failure(
+                androidx.work.workDataOf(
                     KEY_ERROR_MSG to msg,
                     KEY_LOG_FILE to logFile.absolutePath,
                     KEY_LOG_TAIL to tail.joinToString("\n")

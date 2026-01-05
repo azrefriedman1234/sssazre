@@ -77,7 +77,7 @@ class OverlayEditorView @JvmOverloads constructor(
 
     private val hudStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2f
+        strokeWidth = 3f
         color = Color.argb(180, 0, 200, 255) // cyan for watermark frame
     }
 
