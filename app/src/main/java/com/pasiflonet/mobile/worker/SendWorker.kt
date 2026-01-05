@@ -1,4 +1,6 @@
 package com.pasiflonet.mobile.worker
+import java.util.ArrayDeque
+import androidx.work.workDataOf
 
 import android.content.Context
 import android.net.Uri
@@ -18,6 +20,9 @@ import kotlin.math.max
 class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appContext, params) {
 
     companion object {
+        const val KEY_LOG_TAIL = "log_tail"
+        const val KEY_ERROR_MSG = "error_msg"
+        const val KEY_LOG_FILE = "log_file"
         const val KEY_SRC_CHAT_ID = "src_chat_id"
         const val KEY_SRC_MESSAGE_ID = "src_message_id"
         const val KEY_TARGET_USERNAME = "target_username"
@@ -40,6 +45,27 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     private data class RectN(val l: Float, val t: Float, val r: Float, val b: Float)
 
     override fun doWork(): Result {
+        val logFile = File(applicationContext.cacheDir, "ffmpeg_${System.currentTimeMillis()}.log")
+        val tail = ArrayDeque<String>(200)
+
+        fun pushLine(line: String) {
+            runCatching { logFile.appendText(line + "\n") }
+            if (tail.size >= 200) tail.removeFirst()
+            tail.addLast(line.take(400))
+            setProgressAsync(workDataOf(KEY_LOG_TAIL to tail.joinToString("\n")))
+        }
+
+        // Live FFmpegKit logs -> progress (shows on screen via observer)
+        runCatching {
+            com.arthenica.ffmpegkit.FFmpegKitConfig.enableLogCallback { lg ->
+                val msg = lg.message?.trim()
+                if (!msg.isNullOrBlank()) pushLine(msg)
+            }
+        }
+
+        try {
+            pushLine("=== SendWorker started ===")
+
         val srcChatId = inputData.getLong(KEY_SRC_CHAT_ID, 0L)
         val srcMsgId = inputData.getLong(KEY_SRC_MESSAGE_ID, 0L)
         val targetUsernameRaw = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
@@ -180,7 +206,20 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             // ניקוי רק קבצי tmp שלנו (לא תיקיות TDLib)
             runCatching { cleanupTmp(tmpDir) }
         }
-    }
+    
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "SendWorker crash", t)
+            val msg = (t.message ?: t.javaClass.simpleName).take(300)
+            pushLine("=== FAILED: $msg ===")
+            return Result.failure(
+                workDataOf(
+                    KEY_ERROR_MSG to msg,
+                    KEY_LOG_FILE to logFile.absolutePath,
+                    KEY_LOG_TAIL to tail.joinToString("\n")
+                )
+            )
+        }
+}
 
     private fun cleanupTmp(tmpDir: File) {
         val files = tmpDir.listFiles() ?: return
@@ -371,7 +410,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
 
         if (hasWm) {
             val xExpr = "max(0,min(main_w-overlay_w,${wmX.coerceIn(0f, 1f)}*(main_w-overlay_w)))"
-val yExpr = "max(0,min(main_h-overlay_h,${wmY.coerceIn(0f, 1f)}*(main_h-overlay_h)))"
+            val yExpr = "max(0,min(main_h-overlay_h,${wmY.coerceIn(0f, 1f)}*(main_h-overlay_h)))"
 
             // scale watermark relative to video
             val vScaled = "vwm"
