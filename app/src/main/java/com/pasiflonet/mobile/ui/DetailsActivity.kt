@@ -352,7 +352,7 @@ setContentView(R.layout.activity_details)
             .putFloat(SendWorker.KEY_WM_Y, wmY)
             .build()
 
-        val req = OneTimeWorkRequestBuilder<SendWorker>().addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK")
+        val req = OneTimeWorkRequestBuilder<SendWorker>().addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK")
             .setInputData(data)
             .build()
 
