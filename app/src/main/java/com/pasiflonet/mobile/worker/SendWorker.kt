@@ -47,455 +47,202 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     private data class MediaInfo(val kind: Kind, val fileId: Int)
 
     override fun doWork(): Result {
-        // 1) log file + tail
-        val logDir = File(applicationContext.getExternalFilesDir(null), "pasiflonet_logs").apply { mkdirs() }
-        val logFile = File(logDir, "send_${System.currentTimeMillis()}.log")
-        val tail = ArrayDeque<String>(200)
+    val logDir = File(applicationContext.getExternalFilesDir(null), "pasiflonet_logs").apply { mkdirs() }
+    val logFile = File(logDir, "send_${System.currentTimeMillis()}.log")
 
-        fun pushLine(line: String) {
-            runCatching { logFile.appendText(line + "\n") }
-            if (tail.size >= 200) tail.removeFirst()
-            tail.addLast(line.take(500))
-            setProgressAsync(workDataOf(KEY_LOG_TAIL to tail.joinToString("\n")))
-        }
+    val tail = ArrayDeque<String>(80)
+    var pushCount = 0
 
-        pushLine("=== SendWorker started ===")
-        pushLine("INPUT: " + inputData.keyValueMap.toString())
-        pushLine("Thread=" + Thread.currentThread().name)
+    fun tailString(): String {
+        val joined = tail.joinToString("\n")
+        return if (joined.length > 9000) joined.takeLast(9000) else joined
+    }
 
-        // 2) FFmpegKit logs -> pushLine (best effort)
-        runCatching {
-            FFmpegKitConfig.enableLogCallback { log ->
-                try {
-                    pushLine("[FFMPEG ${log.level}] ${log.message}")
-                } catch (_: Throwable) {
-                }
-            }
-            FFmpegKitConfig.enableStatisticsCallback { st: Statistics ->
-                try {
-                    pushLine("STAT: t=${st.time} size=${st.size} br=${st.bitrate} sp=${st.speed}")
-                } catch (_: Throwable) {
-                }
-            }
-        }.onFailure { t ->
-            pushLine("WARN: cannot enable FFmpegKit callbacks: " + (t.message ?: t.javaClass.simpleName))
-        }
-
-        // 3) read inputs
-        val srcChatId = inputData.getLong(KEY_SRC_CHAT_ID, 0L)
-        val srcMsgId = inputData.getLong(KEY_SRC_MESSAGE_ID, 0L)
-        val targetUsernameRaw = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
-        val captionText = inputData.getString(KEY_TEXT).orEmpty()
-        val sendWithMedia = inputData.getBoolean(KEY_SEND_WITH_MEDIA, true)
-val mediaUriStr = inputData.getString(KEY_MEDIA_URI).orEmpty().trim()
-val mediaMime = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
-
-        val blurRectsStr = inputData.getString(KEY_BLUR_RECTS).orEmpty().trim()
-        val watermarkUriStr = inputData.getString(KEY_WATERMARK_URI).orEmpty().trim()
-        val wmX = inputData.getFloat(KEY_WM_X, -1f)
-        val wmY = inputData.getFloat(KEY_WM_Y, -1f)
-
-        val tmpDir = File(applicationContext.cacheDir, "pasiflonet_tmp").apply { mkdirs() }
-
-        try {
-            logI("start: sendWithMedia=$sendWithMedia srcChatId=$srcChatId srcMsgId=$srcMsgId target=$targetUsernameRaw")
-
-            TdLibManager.init(applicationContext)
-            TdLibManager.ensureClient()
-
-            val targetChatId = resolveTargetChatId(targetUsernameRaw)
-                ?: run {
-                    logE("resolveTargetChatId failed for '$targetUsernameRaw'")
-                    pushLine("RETURN: Result.failure")
-                    return Result.failure(
-                        workDataOf(
-                            KEY_ERROR_MSG to "Cannot resolve target chat",
-                            KEY_LOG_FILE to logFile.absolutePath,
-                            KEY_LOG_TAIL to tail.joinToString("\n")
-                        )
-                    )
-                }
-
-            val captionFmt = TdApi.FormattedText(captionText, null)
-            val lpOpts = TdApi.LinkPreviewOptions()
-
-            // 4) TEXT only
-            if (!sendWithMedia) {
-                val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) {
-                    logE("send TEXT only failed")
-                    pushLine("RETURN: Result.failure")
-                    return Result.failure(
-                        workDataOf(
-                            KEY_ERROR_MSG to "send text failed",
-                            KEY_LOG_FILE to logFile.absolutePath,
-                            KEY_LOG_TAIL to tail.joinToString("\n")
-                        )
-                    )
-                }
-                logI("sent TEXT only OK")
-                pushLine("RETURN: Result.success")
-                return Result.success(
+    fun pushLine(line: String) {
+        val safe = line.take(500)
+        runCatching { logFile.appendText(safe + "\n") }
+        if (tail.size >= 80) tail.removeFirst()
+        tail.addLast(safe)
+        pushCount++
+        if (pushCount % 3 == 0) {
+            // WorkManager progress DATA limit ~10KB, so keep it short
+            runCatching {
+                setProgressAsync(
                     workDataOf(
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
+                        KEY_LOG_TAIL to tailString(),
+                        KEY_LOG_FILE to logFile.absolutePath
                     )
                 )
-            }
-
-            // 5) with media
-            
-
-            // === Local media (from editor) support ===
-            val localMediaUriStr = inputData.getString(KEY_MEDIA_URI).orEmpty().trim()
-            val localMediaMime = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
-
-            if (localMediaUriStr.isNotBlank()) {
-                val uri = Uri.parse(localMediaUriStr)
-
-                val kindFromMime = when {
-                    localMediaMime.equals("image/gif", ignoreCase = true) -> Kind.ANIMATION
-                    localMediaMime.startsWith("image/", ignoreCase = true) -> Kind.PHOTO
-                    localMediaMime.startsWith("video/", ignoreCase = true) -> Kind.VIDEO
-                    else -> Kind.DOCUMENT
-                }
-
-                val inExt = when (kindFromMime) {
-                    Kind.PHOTO -> "jpg"
-                    Kind.VIDEO -> "mp4"
-                    Kind.ANIMATION -> "mp4"
-                    else -> "bin"
-                }
-
-                val inputFileLocal = resolveUriToTempFile(uri, tmpDir, "in_${System.currentTimeMillis()}.$inExt")
-                    ?: run {
-                        logE("local media_uri open failed: $localMediaUriStr")
-                        pushLine("RETURN: Result.failure (media_uri open failed)")
-                        return Result.failure()
-                    }
-
-                // watermark file (אם יש)
-                val wmFileLocal: File? = if (watermarkUriStr.isNotBlank()) {
-                    resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_${System.currentTimeMillis()}.png")
-                } else null
-
-                // blur rects
-                val rectsLocal = parseRects(blurRectsStr)
-                val needEditsLocal = (wmFileLocal != null) || rectsLocal.isNotEmpty()
-
-                val finalFileLocal: File = if (!needEditsLocal) {
-                    inputFileLocal
-                } else {
-                    val outExt = when (kindFromMime) {
-                        Kind.PHOTO -> "jpg"
-                        Kind.VIDEO -> "mp4"
-                        Kind.ANIMATION -> "mp4"
-                        else -> "bin"
-                    }
-                    val outFile = File(tmpDir, "out_${System.currentTimeMillis()}.$outExt")
-                    val ok = runFfmpegEdits(
-                        input = inputFileLocal,
-                        output = outFile,
-                        kind = kindFromMime,
-                        rects = rectsLocal,
-                        wmFile = wmFileLocal,
-                        wmX = wmX,
-                        wmY = wmY
-                    )
-                    if (!ok) inputFileLocal else outFile
-                }
-
-                val input = TdApi.InputFileLocal(finalFileLocal.absolutePath)
-                val content: TdApi.InputMessageContent = when (kindFromMime) {
-                    Kind.PHOTO -> TdApi.InputMessagePhoto().apply {
-                        photo = input
-                        caption = captionFmt
-                    }
-                    Kind.VIDEO -> TdApi.InputMessageVideo().apply {
-                        video = input
-                        caption = captionFmt
-                        supportsStreaming = true
-                    }
-                    Kind.ANIMATION -> TdApi.InputMessageAnimation().apply {
-                        animation = input
-                        caption = captionFmt
-                    }
-                    else -> TdApi.InputMessageDocument().apply {
-                        document = input
-                        caption = captionFmt
-                    }
-                }
-
-                val sentOk = sendMessage(targetChatId, content)
-                logI("sent LOCAL media kind=$kindFromMime edited=$needEditsLocal final=${finalFileLocal.name} ok=$sentOk")
-                return if (sentOk) Result.success() else Result.failure()
-            }
-
-
-        // DIRECT_MEDIA_URI_BEGIN
-        // If editor/gallery provided a media_uri, use it (instead of TDLib src message ids).
-        if (sendWithMedia && mediaUriStr.isNotBlank()) {
-            try {
-                val uri = Uri.parse(mediaUriStr)
-
-                fun guessExt(mime: String): String {
-                    val m = mime.lowercase()
-                    return when {
-                        m.startsWith("video/") -> "mp4"
-                        m == "image/png" -> "png"
-                        m == "image/webp" -> "webp"
-                        m.startsWith("image/") -> "jpg"
-                        else -> "bin"
-                    }
-                }
-
-                fun kindFromMime(mime: String): Kind {
-                    val m = mime.lowercase()
-                    return when {
-                        m.startsWith("video/") -> Kind.VIDEO
-                        m == "image/gif" -> Kind.ANIMATION
-                        m.startsWith("image/") -> Kind.PHOTO
-                        else -> Kind.DOCUMENT
-                    }
-                }
-
-                val resolvedMime = mediaMime.ifBlank { applicationContext.contentResolver.getType(uri).orEmpty() }
-                val ext = guessExt(resolvedMime)
-                val inputFile = resolveUriToTempFile(uri, tmpDir, "in_${System.currentTimeMillis()}.$ext")
-                    ?: run {
-                        logE("media_uri resolve failed: $uri")
-                        val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                        if (!sendMessage(targetChatId, content)) return Result.failure()
-                        return Result.success()
-                    }
-
-                val k = kindFromMime(resolvedMime)
-
-                val wmFile: File? = if (watermarkUriStr.isNotBlank()) {
-                    resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_${System.currentTimeMillis()}.png")
-                } else null
-
-                val rects = parseRects(blurRectsStr)
-                val needEdits = (wmFile != null) || rects.isNotEmpty()
-
-                val finalFile: File = if (!needEdits) {
-                    inputFile
-                } else {
-                    val outExt = when (k) {
-                        Kind.PHOTO -> "jpg"
-                        Kind.VIDEO, Kind.ANIMATION -> "mp4"
-                        else -> "bin"
-                    }
-                    val outFile = File(tmpDir, "out_${System.currentTimeMillis()}.$outExt")
-                    val ok = runFfmpegEdits(
-                        input = inputFile,
-                        output = outFile,
-                        kind = k,
-                        rects = rects,
-                        wmFile = wmFile,
-                        wmX = wmX,
-                        wmY = wmY
-                    )
-                    if (!ok) inputFile else outFile
-                }
-
-                val input = TdApi.InputFileLocal(finalFile.absolutePath)
-                val content: TdApi.InputMessageContent = when (k) {
-                    Kind.PHOTO -> TdApi.InputMessagePhoto().apply { photo = input; caption = captionFmt }
-                    Kind.VIDEO -> TdApi.InputMessageVideo().apply { video = input; caption = captionFmt; supportsStreaming = true }
-                    Kind.ANIMATION -> TdApi.InputMessageAnimation().apply { animation = input; caption = captionFmt }
-                    else -> TdApi.InputMessageDocument().apply { document = input; caption = captionFmt }
-                }
-
-                val okSend = sendMessage(targetChatId, content)
-                logI("sent DIRECT media kind=$k edited=$needEdits ok=$okSend file=${finalFile.name}")
-                return if (okSend) Result.success() else Result.failure()
-            } catch (t: Throwable) {
-                logE("direct media_uri path crashed", t)
-                val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) return Result.failure()
-                return Result.success()
             }
         }
-        // DIRECT_MEDIA_URI_END
+    }
 
+    fun fail(msg: String, t: Throwable? = null): Result {
+        val m = (msg.ifBlank { "send failed" }).take(300)
+        pushLine("=== FAILED: $m ===")
+        if (t != null) pushLine(android.util.Log.getStackTraceString(t).take(1200))
+        return Result.failure(
+            workDataOf(
+                KEY_ERROR_MSG to m,
+                KEY_LOG_FILE to logFile.absolutePath,
+                KEY_LOG_TAIL to tailString()
+            )
+        )
+    }
 
-        if (srcChatId == 0L || srcMsgId == 0L) {
-                logE("missing src ids")
-                pushLine("RETURN: Result.failure")
-                return Result.failure(
-                    workDataOf(
-                        KEY_ERROR_MSG to "missing src ids",
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
-                    )
-                )
-            }
+    pushLine("=== SendWorker started ===")
+    pushLine("INPUT: " + inputData.keyValueMap.toString())
 
-            // 6) fetch source message
-            val msg = getMessageSync(srcChatId, srcMsgId) ?: run {
-                logE("GetMessage failed")
-                pushLine("RETURN: Result.failure")
-                return Result.failure(
-                    workDataOf(
-                        KEY_ERROR_MSG to "GetMessage failed",
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
-                    )
-                )
-            }
+    // FFmpeg live logs (crash-safe, no import collision with android.util.Log)
+    runCatching {
+        FFmpegKitConfig.enableLogCallback { l: com.arthenica.ffmpegkit.Log ->
+            pushLine("[FFMPEG ${'$'}{l.level}] ${'$'}{l.message}".take(500))
+        }
+    }
+    runCatching {
+        FFmpegKitConfig.enableStatisticsCallback { st: Statistics ->
+            pushLine("[STAT] t=${'$'}{st.time} size=${'$'}{st.size} br=${'$'}{st.bitrate} sp=${'$'}{st.speed}")
+        }
+    }
 
-            // 7) extract media
-            val media = extractMedia(msg) ?: run {
-                logE("No media in source message -> fallback TEXT")
-                val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) {
-                    pushLine("RETURN: Result.failure")
-                    return Result.failure(
-                        workDataOf(
-                            KEY_ERROR_MSG to "no media & text send failed",
-                            KEY_LOG_FILE to logFile.absolutePath,
-                            KEY_LOG_TAIL to tail.joinToString("\n")
-                        )
-                    )
+    val targetUsernameRaw = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
+    val captionText = inputData.getString(KEY_TEXT).orEmpty()
+    val sendWithMedia = inputData.getBoolean(KEY_SEND_WITH_MEDIA, true)
+
+    val blurRectsStr = inputData.getString(KEY_BLUR_RECTS).orEmpty().trim()
+    val watermarkUriStr = inputData.getString(KEY_WATERMARK_URI).orEmpty().trim()
+    val wmX = inputData.getFloat(KEY_WM_X, -1f)
+    val wmY = inputData.getFloat(KEY_WM_Y, -1f)
+
+    val mediaUriStr = inputData.getString(KEY_MEDIA_URI).orEmpty().trim()
+    val mediaMime = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
+
+    if (targetUsernameRaw.isBlank()) return fail("Missing target username")
+
+    val captionFmt = TdApi.FormattedText(captionText, null)
+    val lpOpts = TdApi.LinkPreviewOptions()
+
+    val tmpDir = File(applicationContext.cacheDir, "pasiflonet_tmp").apply { mkdirs() }
+
+    try {
+        TdLibManager.init(applicationContext)
+        TdLibManager.ensureClient()
+
+        val targetChatId = resolveTargetChatId(targetUsernameRaw)
+            ?: return fail("resolveTargetChatId failed for '$targetUsernameRaw'")
+
+        if (!sendWithMedia) {
+            val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
+            val ok = sendMessage(targetChatId, content)
+            return if (ok) {
+                pushLine("=== SUCCESS (text) ===")
+                Result.success(workDataOf(KEY_LOG_FILE to logFile.absolutePath, KEY_LOG_TAIL to tailString()))
+            } else fail("SendMessage(text) failed")
+        }
+
+        // watermark file (optional)
+        val wmFile: File? = if (watermarkUriStr.isNotBlank()) {
+            resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_${System.currentTimeMillis()}.png")
+        } else null
+
+        val rects = parseRects(blurRectsStr)
+
+        // --- choose input media source ---
+        val (kind, inputFile) = if (mediaUriStr.isNotBlank()) {
+            val f = resolveUriToTempFile(Uri.parse(mediaUriStr), tmpDir, "in_${System.currentTimeMillis()}")
+                ?: return fail("Cannot read media_uri")
+            val k = when {
+                mediaMime.startsWith("video") -> Kind.VIDEO
+                mediaMime.startsWith("image") -> Kind.PHOTO
+                mediaMime.contains("gif") -> Kind.ANIMATION
+                else -> {
+                    val name = f.name.lowercase()
+                    if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".webm")) Kind.VIDEO
+                    else if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")) Kind.PHOTO
+                    else Kind.DOCUMENT
                 }
-                pushLine("RETURN: Result.success")
-                return Result.success(
-                    workDataOf(
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
-                    )
-                )
             }
+            pushLine("SOURCE: local uri kind=$k file=${'$'}{f.name}")
+            k to f
+        } else {
+            val srcChatId = inputData.getLong(KEY_SRC_CHAT_ID, 0L)
+            val srcMsgId = inputData.getLong(KEY_SRC_MESSAGE_ID, 0L)
+            if (srcChatId == 0L || srcMsgId == 0L) return fail("Missing src ids (and no media_uri)")
 
-            // 8) download file via TDLib
-            val srcFile = downloadFileToLocal(media.fileId, timeoutSec = 90) ?: run {
-                logE("DownloadFile failed (fileId=${media.fileId}) -> fallback TEXT")
-                val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) {
-                    pushLine("RETURN: Result.failure")
-                    return Result.failure(
-                        workDataOf(
-                            KEY_ERROR_MSG to "download failed & text send failed",
-                            KEY_LOG_FILE to logFile.absolutePath,
-                            KEY_LOG_TAIL to tail.joinToString("\n")
-                        )
-                    )
-                }
-                pushLine("RETURN: Result.success")
-                return Result.success(
-                    workDataOf(
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
-                    )
-                )
-            }
-
-            // 9) copy to our tmp
-            val inExt = when (media.kind) {
+            val msg = getMessageSync(srcChatId, srcMsgId) ?: return fail("GetMessage failed")
+            val media = extractMedia(msg) ?: return fail("No media in source message")
+            val srcFile = downloadFileToLocal(media.fileId, timeoutSec = 90) ?: return fail("DownloadFile failed")
+            val ext = when (media.kind) {
                 Kind.PHOTO -> "jpg"
                 Kind.VIDEO -> "mp4"
                 Kind.ANIMATION -> "mp4"
                 else -> "bin"
             }
-            val inputFile = File(tmpDir, "in_${System.currentTimeMillis()}." + inExt)
-            srcFile.copyTo(inputFile, overwrite = true)
-
-            // 10) watermark file (if any)
-            val wmFile: File? = if (watermarkUriStr.isNotBlank()) {
-                resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_${System.currentTimeMillis()}.png")
-            } else null
-
-            // 11) blur rects
-            val rects = parseRects(blurRectsStr)
-
-            val needEdits = (wmFile != null) || rects.isNotEmpty()
-            val finalFile: File = if (!needEdits) {
-                logI("no edits requested -> send original")
-                inputFile
-            } else {
-                val outExt = when (media.kind) {
-                    Kind.PHOTO -> "jpg"
-                    Kind.VIDEO -> "mp4"
-                    Kind.ANIMATION -> "mp4"
-                    else -> "bin"
-                }
-                val outFile = File(tmpDir, "out_${System.currentTimeMillis()}." + outExt)
-                val ok = runFfmpegEdits(
-                    input = inputFile,
-                    output = outFile,
-                    kind = media.kind,
-                    rects = rects,
-                    wmFile = wmFile,
-                    wmX = wmX,
-                    wmY = wmY
-                )
-                if (!ok) {
-                    logE("FFmpeg failed -> send original instead (still with caption)")
-                    inputFile
-                } else outFile
-            }
-
-            // 12) build TDLib content
-            val input = TdApi.InputFileLocal(finalFile.absolutePath)
-            val content: TdApi.InputMessageContent = when (media.kind) {
-                Kind.PHOTO -> TdApi.InputMessagePhoto().apply {
-                    photo = input
-                    caption = captionFmt
-                }
-                Kind.VIDEO -> TdApi.InputMessageVideo().apply {
-                    video = input
-                    caption = captionFmt
-                    supportsStreaming = true
-                }
-                Kind.ANIMATION -> TdApi.InputMessageAnimation().apply {
-                    animation = input
-                    caption = captionFmt
-                }
-                else -> TdApi.InputMessageDocument().apply {
-                    document = input
-                    caption = captionFmt
-                }
-            }
-
-            val sentOk = sendMessage(targetChatId, content)
-            logI("sent media kind=${media.kind} edited=$needEdits final=${finalFile.name} ok=$sentOk")
-            pushLine(if (sentOk) "RETURN: Result.success" else "RETURN: Result.failure")
-
-            return if (sentOk) {
-                Result.success(
-                    workDataOf(
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
-                    )
-                )
-            } else {
-                Result.failure(
-                    workDataOf(
-                        KEY_ERROR_MSG to "sendMessage failed",
-                        KEY_LOG_FILE to logFile.absolutePath,
-                        KEY_LOG_TAIL to tail.joinToString("\n")
-                    )
-                )
-            }
-        } catch (t: Throwable) {
-            logE("crash in SendWorker", t)
-            val msg = (t.message ?: t.javaClass.simpleName).take(300)
-            pushLine("=== FAILED: $msg ===")
-            pushLine(android.util.Log.getStackTraceString(t))
-            pushLine("RETURN: Result.failure")
-            return Result.failure(
-                workDataOf(
-                    KEY_ERROR_MSG to msg,
-                    KEY_LOG_FILE to logFile.absolutePath,
-                    KEY_LOG_TAIL to tail.joinToString("\n")
-                )
-            )
-        } finally {
-            runCatching { cleanupTmp(tmpDir) }
-            pushLine("=== SendWorker finished ===")
+            val copied = File(tmpDir, "in_${System.currentTimeMillis()}.$ext")
+            srcFile.copyTo(copied, overwrite = true)
+            pushLine("SOURCE: tg kind=${'$'}{media.kind} file=${'$'}{copied.name}")
+            media.kind to copied
         }
+
+        val needEdits = (wmFile != null) || rects.isNotEmpty()
+        val finalFile: File = if (!needEdits) {
+            inputFile
+        } else {
+            val outExt = when (kind) {
+                Kind.PHOTO -> "jpg"
+                Kind.VIDEO -> "mp4"
+                Kind.ANIMATION -> "mp4"
+                else -> "bin"
+            }
+            val outFile = File(tmpDir, "out_${System.currentTimeMillis()}.$outExt")
+            val ok = runFfmpegEdits(
+                input = inputFile,
+                output = outFile,
+                kind = kind,
+                rects = rects,
+                wmFile = wmFile,
+                wmX = wmX,
+                wmY = wmY
+            )
+            if (!ok) {
+                pushLine("WARN: FFmpeg failed -> sending original")
+                inputFile
+            } else outFile
+        }
+
+        val input = TdApi.InputFileLocal(finalFile.absolutePath)
+        val content: TdApi.InputMessageContent = when (kind) {
+            Kind.PHOTO -> TdApi.InputMessagePhoto().apply {
+                photo = input
+                caption = captionFmt
+            }
+            Kind.VIDEO -> TdApi.InputMessageVideo().apply {
+                video = input
+                caption = captionFmt
+                supportsStreaming = true
+            }
+            Kind.ANIMATION -> TdApi.InputMessageAnimation().apply {
+                animation = input
+                caption = captionFmt
+            }
+            else -> TdApi.InputMessageDocument().apply {
+                document = input
+                caption = captionFmt
+            }
+        }
+
+        val sentOk = sendMessage(targetChatId, content)
+        return if (sentOk) {
+            pushLine("=== SUCCESS ===")
+            Result.success(workDataOf(KEY_LOG_FILE to logFile.absolutePath, KEY_LOG_TAIL to tailString()))
+        } else fail("SendMessage(media) failed")
+
+    } catch (t: Throwable) {
+        return fail(t.message ?: t.javaClass.simpleName, t)
+    } finally {
+        runCatching { cleanupTmp(tmpDir) }
     }
+}
     private fun cleanupTmp(tmpDir: File) {
         val files = tmpDir.listFiles() ?: return
         var n = 0
@@ -643,145 +390,102 @@ val mediaMime = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
     }
 
         private fun runFfmpegEdits(
-        input: File,
-        output: File,
-        kind: Kind,
-        rects: List<RectN>,
-        wmFile: File?,
-        wmX: Float,
-        wmY: Float
-    ): Boolean {
-        val hasWm = wmFile != null
-
-        val filters = mutableListOf<String>()
-        var cur = "v0"
-
-        // base: always go to rgba
-        filters += "[0:v]format=rgba[$cur]"
-
-        // blur rectangles
-        rects.forEachIndexed { i, r ->
-            val base = "base$i"
-            val tmp = "tmp$i"
-            val bl = "bl$i"
-            val out = "v${i + 1}"
-
-            val xCrop = "max(0,${r.l}*iw)"
-            val yCrop = "max(0,${r.t}*ih)"
-            val wCrop = "max(1,(${r.r}-${r.l})*iw)"
-            val hCrop = "max(1,(${r.b}-${r.t})*ih)"
-            val xOv = "max(0,${r.l}*main_w)"
-            val yOv = "max(0,${r.t}*main_h)"
-
-            filters += "[$cur]split=2[$base][$tmp]"
-            filters += "[$tmp]crop=w=$wCrop:h=$hCrop:x=$xCrop:y=$yCrop,boxblur=10:1[$bl]"
-            filters += "[$base][$bl]overlay=x=$xOv:y=$yOv[$out]"
-            cur = out
-        }
-
-        val outLabel = if (hasWm) "outv" else cur
-
-
-        // WM_PIXEL_SCALE_BEGIN
-        // Compute watermark scale in PIXELS (stable)
-        fun baseSizePx(): Pair<Int, Int> {
-            return try {
-                if (kind == Kind.PHOTO) {
-                    val opt = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    android.graphics.BitmapFactory.decodeFile(input.absolutePath, opt)
-                    val w = (opt.outWidth).coerceAtLeast(1)
-                    val h = (opt.outHeight).coerceAtLeast(1)
-                    Pair(w, h)
-                } else {
-                    val mmr = android.media.MediaMetadataRetriever()
-                    mmr.setDataSource(input.absolutePath)
-                    val w = (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1280).coerceAtLeast(1)
-                    val h = (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 720).coerceAtLeast(1)
-                    runCatching { mmr.release() }
-                    Pair(w, h)
-                }
-            } catch (_: Throwable) {
-                Pair(1280, 720)
-            }
-        }
-
-        fun wmSizePx(baseW: Int): Pair<Int, Int> {
-            return try {
-                val opt = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                android.graphics.BitmapFactory.decodeFile(wmFile!!.absolutePath, opt)
-                val ww = (opt.outWidth).coerceAtLeast(1)
-                val wh = (opt.outHeight).coerceAtLeast(1)
-                val targetW = (baseW * 0.18f).toInt().coerceAtLeast(32)
-                val scale = targetW / ww.toFloat()
-                val targetH = (wh * scale).toInt().coerceAtLeast(32)
-                Pair(targetW, targetH)
-            } catch (_: Throwable) {
-                val t = (baseW * 0.18f).toInt().coerceAtLeast(32)
-                Pair(t, t)
-            }
-        }
-
-        if (hasWm) {
-            val (bw, _) = baseSizePx()
-            val (wW, wH) = wmSizePx(bw)
-
-            val nx = wmX.coerceIn(0f, 1f)
-            val ny = wmY.coerceIn(0f, 1f)
-            val xExpr = "(${nx}*(main_w-overlay_w))"
-            val yExpr = "(${ny}*(main_h-overlay_h))"
-
-            filters += "[1:v]scale=${wW}:${wH}[wm]"
-            filters += "[$cur][wm]overlay=x=$xExpr:y=$yExpr:format=auto[$outLabel]"
-        }
-        // WM_PIXEL_SCALE_END
-
-
-        val fc = filters.joinToString(";")
-
-        val args = mutableListOf<String>()
-        args += "-y"
-        args += "-i"; args += input.absolutePath
-        if (hasWm && wmFile != null) {
-            args += "-i"; args += wmFile.absolutePath
-        }
-        args += "-filter_complex"; args += fc
-        args += "-map"; args += "[$outLabel]"
-
-        when (kind) {
-            Kind.PHOTO -> {
-                args += "-q:v"; args += "2"
-                args += output.absolutePath
-            }
-            Kind.VIDEO, Kind.ANIMATION -> {
-                // keep audio if present
-                args += "-map"; args += "0:a?"
-                args += "-c:v"; args += "libx264"
-                args += "-preset"; args += "veryfast"
-                args += "-crf"; args += "28"
-                args += "-c:a"; args += "aac"
-                args += "-b:a"; args += "128k"
-                args += output.absolutePath
-            }
-            else -> {
-                args += output.absolutePath
-            }
-        }
-
-        val cmd = args.joinToString(" ")
-        logI("FFmpeg cmd: $cmd")
-
-        val session = FFmpegKit.execute(cmd)
-        val rc = session.returnCode
-        val ok = ReturnCode.isSuccess(rc)
-
-        if (!ok) {
-            logE("FFmpeg failed rc=$rc")
-            logE("FFmpeg logs:\n" + session.allLogsAsString)
-        } else {
-            logI("FFmpeg OK -> ${output.name} size=${output.length()}")
-        }
-
-        return ok && output.exists() && output.length() > 0
+    input: File,
+    output: File,
+    kind: Kind,
+    rects: List<RectN>,
+    wmFile: File?,
+    wmX: Float,
+    wmY: Float
+): Boolean {
+    val hasWm = wmFile != null
+    val hasBlur = rects.isNotEmpty()
+    if (!hasWm && !hasBlur) {
+        runCatching { input.copyTo(output, overwrite = true) }
+        return output.exists() && output.length() > 0
     }
+
+    val filters = mutableListOf<String>()
+    var cur = "v0"
+
+    // base -> rgba
+    filters += "[0:v]format=rgba[$cur]"
+
+    // blur rects
+    rects.forEachIndexed { i, r ->
+        val base = "base$i"
+        val tmp = "tmp$i"
+        val bl = "bl$i"
+        val out = "v${'$'}{i + 1}"
+
+        val xCrop = "max(0,${'$'}{r.l}*iw)"
+        val yCrop = "max(0,${'$'}{r.t}*ih)"
+        val wCrop = "max(1,(${ '$' }{r.r}-${ '$' }{r.l})*iw)"
+        val hCrop = "max(1,(${ '$' }{r.b}-${ '$' }{r.t})*ih)"
+
+        val xOv = "max(0,${'$'}{r.l}*main_w)"
+        val yOv = "max(0,${'$'}{r.t}*main_h)"
+
+        filters += "[$cur]split=2[$base][$tmp]"
+        filters += "[$tmp]crop=w=$wCrop:h=$hCrop:x=$xCrop:y=$yCrop,boxblur=10:1[$bl]"
+        filters += "[$base][$bl]overlay=x=$xOv:y=$yOv[$out]"
+        cur = out
+    }
+
+    val outLabel = if (hasWm) "outv" else cur
+
+    // watermark: scale to ~18% of MAIN video width (not watermark width)
+    if (hasWm) {
+        val nx = (if (wmX >= 0f) wmX else 0.82f).coerceIn(0f, 1f)
+        val ny = (if (wmY >= 0f) wmY else 0.82f).coerceIn(0f, 1f)
+
+        val xExpr = "($nx*(main_w-overlay_w))"
+        val yExpr = "($ny*(main_h-overlay_h))"
+
+        filters += "[1:v][$cur]scale2ref=w=main_w*0.18:h=-1[wm][vref]"
+        filters += "[vref][wm]overlay=$xExpr:$yExpr[$outLabel]"
+    }
+
+    val fc = filters.joinToString(";")
+
+    val args = mutableListOf<String>()
+    args += "-y"
+    args += "-i"; args += input.absolutePath
+    if (hasWm) { args += "-i"; args += wmFile!!.absolutePath }
+    args += "-filter_complex"; args += fc
+    args += "-map"; args += "[$outLabel]"
+
+    when (kind) {
+        Kind.PHOTO -> {
+            // important: single image output must be forced
+            args += "-frames:v"; args += "1"
+            args += "-q:v"; args += "2"
+            args += output.absolutePath
+        }
+        Kind.VIDEO, Kind.ANIMATION -> {
+            args += "-map"; args += "0:a?"
+            args += "-c:v"; args += "libx264"
+            args += "-preset"; args += "veryfast"
+            args += "-crf"; args += "28"
+            args += "-c:a"; args += "aac"
+            args += "-b:a"; args += "128k"
+            args += output.absolutePath
+        }
+        else -> args += output.absolutePath
+    }
+
+    val cmd = args.joinToString(" ")
+    logI("FFmpeg cmd: $cmd")
+
+    val session = FFmpegKit.execute(cmd)
+    val rc = session.returnCode
+    val ok = rc != null && ReturnCode.isSuccess(rc)
+    if (!ok) {
+        logE("FFmpeg failed rc=$rc")
+        logE("FFmpeg logs:\n" + session.allLogsAsString)
+        return false
+    }
+    return output.exists() && output.length() > 0
+}
 
 }
