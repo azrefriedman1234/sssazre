@@ -167,7 +167,6 @@ setContentView(R.layout.activity_details)
 
         findViewById<View>(R.id.btnTranslate).setOnClickListener {
             val src = etCaption.text?.toString().orEmpty()
-            pasTranslateAsync(src)
         }
 
         findViewById<View>(R.id.btnSend).setOnClickListener { enqueueSendAndClose() }

@@ -63,7 +63,7 @@ private val blurPaint = Paint().apply {
     data class OverlayState(
         val wmX: Float,
         val wmY: Float,
-        val blurRects: List<NRect>
+        val blurNRects: List<NRect>
     )
 
     // normalized
@@ -76,7 +76,7 @@ private val blurPaint = Paint().apply {
     private val dst = RectF()
 
     // blur rects normalized
-    private val blurRects: MutableList<NRect> = mutableListOf()
+    private val blurNRects: MutableList<NRect> = mutableListOf()
 
     // interaction
     private enum class Mode { NONE, DRAG_WM, DRAW_BLUR }
@@ -130,13 +130,13 @@ private val blurPaint = Paint().apply {
     }
 
     fun clearBlurRects() {
-        blurRects.clear()
+        blurNRects.clear()
         curRect = null
         invalidate()
     }
 
     fun setBlurRectsNorm(list: List<NRect>) {
-        blurRects.clear()
+        blurNRects.clear()
         blurRects.addAll(list.map { it.norm() })
         invalidate()
     }
@@ -169,7 +169,7 @@ super.onDraw(canvas)
         dst.set(0f, 0f, width.toFloat(), height.toFloat())
 
         // 1) draw blur previews (existing)
-        for (nr in blurRects) {
+        for (nr in blurNRects) {
             val r = nr.norm()
             val rc = RectF(
                 dst.left + r.l * dst.width(),
@@ -221,7 +221,7 @@ super.onDraw(canvas)
         try {
             val w = width.toFloat().coerceAtLeast(1f)
             val h = height.toFloat().coerceAtLeast(1f)
-            for (r in blurRects) {
+            for (r in blurNRects) {
                 val left = (r.l.coerceIn(0f,1f) * w)
                 val top = (r.t.coerceIn(0f,1f) * h)
                 val right = (r.r.coerceIn(0f,1f) * w)
@@ -293,7 +293,7 @@ super.onDraw(canvas)
                 if (rc != null) {
                     val n = rectPxToNorm(rc).norm()
                     if (n.r > n.l && n.b > n.t) {
-                        blurRects.add(n)
+                        blurNRects.add(n)
                         invalidate()
                     }
                 }
@@ -306,7 +306,7 @@ super.onDraw(canvas)
                         // ignore tiny drags
                         if (abs(r.right - r.left) > 12f && abs(r.bottom - r.top) > 12f) {
                             val n = rectPxToNorm(r).norm()
-                            blurRects.add(n)
+                            blurNRects.add(n)
                         }
                     }
                     invalidate()
@@ -470,10 +470,10 @@ super.onDraw(canvas)
 
 
     private fun drawBlurRects(canvas: android.graphics.Canvas) {
-        if (blurRects.isEmpty()) return
+        if (blurNRects.isEmpty()) return
         val w = width.toFloat().coerceAtLeast(1f)
         val h = height.toFloat().coerceAtLeast(1f)
-        for (r in blurRects) {
+        for (r in blurNRects) {
             val rr = RectF(r.left*w, r.top*h, r.right*w, r.bottom*h)
             canvas.drawRect(rr, blurPaint)
         }
