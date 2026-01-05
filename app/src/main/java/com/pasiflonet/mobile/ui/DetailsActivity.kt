@@ -434,10 +434,4 @@ setContentView(R.layout.activity_details)
             }
     }
     // === SEND_LOG_UI_END ===
-// PAS_TRANSLATE_ASYNC_BEGIN
-    // Async translate: never block UI thread
-    private fun pasTranslateAsync(src: String) {
-    }
-// PAS_TRANSLATE_ASYNC_END
-
 }
