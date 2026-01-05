@@ -9,9 +9,22 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.pasiflonet.mobile.R
 import com.pasiflonet.mobile.util.TempCleaner
+import com.pasiflonet.mobile.td.TdUpdatesBus
 import org.drinkless.tdlib.TdApi
 
 class MainActivity : AppCompatActivity() {
+
+    private val tdUpdateListener: (TdApi.Object) -> Unit = { obj ->
+        if (obj is TdApi.UpdateNewMessage) {
+            try {
+                val msg = obj.message
+                liveMsgs.add(0, msg)
+                if (liveMsgs.size > 200) liveMsgs.removeAt(liveMsgs.size - 1)
+                runOnUiThread { refreshList() }
+            } catch (_: Throwable) {}
+        }
+    }
+
 
     private lateinit var adapter: MessagesAdapter
     private val liveMsgs = ArrayList<TdApi.Message>(200)
@@ -41,8 +54,7 @@ class MainActivity : AppCompatActivity() {
 
         hookSettingsExitClearButtons()
 
-        // ניסיון להתקין Live updates דרך TDLib בצורה חסינה (reflection)
-        installTdlibUpdatesHandler()
+        // Live updates דרך TdUpdatesBus (חיבור אמיתי ייעשה במקום שבו TDLib Client מקבל updates)
 
         refreshList()
     }
@@ -98,16 +110,6 @@ class MainActivity : AppCompatActivity() {
      * מתקין handler של עדכונים על TDLib בלי תלות בשמות/מחלקות ספציפיים.
      * מנסה כמה מועמדים נפוצים אצלך בפרויקט.
      */
-    private fun installTdlibUpdatesHandler() {
-        val handler: (TdApi.Object) -> Unit = { obj ->
-            if (obj is TdApi.UpdateNewMessage) {
-                try {
-                    val msg = obj.message
-                    liveMsgs.add(0, msg)
-                    if (liveMsgs.size > 200) liveMsgs.removeAt(liveMsgs.size - 1)
-                    runOnUiThread { refreshList() }
-                } catch (_: Throwable) {}
-            }
         }
 
         // מועמדים נפוצים: נסה להפעיל מתודה שמקבלת Function1<TdApi.Object, Unit>
@@ -150,4 +152,14 @@ class MainActivity : AppCompatActivity() {
         // אם לא הצליח – לא שוברים. לפחות האפליקציה תעלה, ואת זה נסגור בשלב הבא עם שם המחלקה המדויק.
         Toast.makeText(this, "Live updates: handler not attached (need exact TD entrypoint)", Toast.LENGTH_SHORT).show()
     }
+    override fun onStart() {
+        super.onStart()
+        TdUpdatesBus.addListener(tdUpdateListener)
+    }
+
+    override fun onStop() {
+        TdUpdatesBus.removeListener(tdUpdateListener)
+        super.onStop()
+    }
+
 }
