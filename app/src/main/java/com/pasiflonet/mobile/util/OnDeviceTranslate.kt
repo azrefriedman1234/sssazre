@@ -1,91 +1,86 @@
 package com.pasiflonet.mobile.util
 
 import android.content.Context
-import android.util.Log
-import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
-import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 
 object OnDeviceTranslate {
 
-    private const val TAG = "OnDeviceTranslate"
-
-    private fun detectSourceLangBlocking(text: String, timeoutMs: Long): String? {
-        val latch = CountDownLatch(1)
-        val out = AtomicReference<String?>(null)
-        try {
-            LanguageIdentification.getClient()
-                .identifyLanguage(text)
-                .addOnSuccessListener { lang ->
-                    // lang is BCP-47 (e.g. "en", "ru") or "und"
-                    out.set(lang)
-                    latch.countDown()
-                }
-                .addOnFailureListener {
-                    latch.countDown()
-                }
-            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-        } catch (_: Throwable) {
-        }
-        val lang = out.get()
-        if (lang.isNullOrBlank() || lang == "und") return null
-        return lang
-    }
-
-    private fun buildTranslator(srcTag: String): Translator? {
-        val src = TranslateLanguage.fromLanguageTag(srcTag) ?: return null
-        val opts = TranslatorOptions.Builder()
-            .setSourceLanguage(src)
-            .setTargetLanguage(TranslateLanguage.HEBREW)
-            .build()
-        return Translation.getClient(opts)
-    }
-
     /**
-     * Blocking translation (DO NOT call from UI thread).
-     * Downloads model if needed (free, on-device).
+     * Offline translate ANY language -> Hebrew using ML Kit on-device models.
+     * First detects language (offline). Then downloads the needed translation model if missing.
+     * Returns null on failure/timeout.
      */
     fun translateToHebrewBlocking(ctx: Context, text: String, timeoutMs: Long = 20000L): String? {
-        if (text.isBlank()) return ""
+        val src = text.trim()
+        if (src.isEmpty()) return ""
 
-        val srcTag = detectSourceLangBlocking(text, timeoutMs) ?: "en"
-        val translator = buildTranslator(srcTag) ?: buildTranslator("en") ?: return null
+        val detected = detectLangBlocking(src, timeoutMs = timeoutMs) ?: "en"
+        val sourceLang = normalizeToMlKit(detected) ?: TranslateLanguage.ENGLISH
 
-        val latch = CountDownLatch(1)
-        val out = AtomicReference<String?>(null)
+        val options = TranslatorOptions.Builder()
+            .setSourceLanguage(sourceLang)
+            .setTargetLanguage(TranslateLanguage.HEBREW)
+            .build()
+
+        val translator = Translation.getClient(options)
 
         try {
-            val conditions = DownloadConditions.Builder().build()
-            translator.downloadModelIfNeeded(conditions)
-                .addOnSuccessListener {
-                    translator.translate(text)
-                        .addOnSuccessListener { t ->
-                            out.set(t)
-                            latch.countDown()
-                        }
-                        .addOnFailureListener { e ->
-                            Log.w(TAG, "translate failed: ${e.message}")
-                            latch.countDown()
-                        }
-                }
-                .addOnFailureListener { e ->
-                    Log.w(TAG, "model download failed: ${e.message}")
-                    latch.countDown()
-                }
+            // Ensure model exists (downloads once, then works offline)
+            val dlLatch = CountDownLatch(1)
+            var dlOk = false
+            var dlErr: Throwable? = null
 
-            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-        } catch (t: Throwable) {
-            Log.w(TAG, "translate crash: ${t.message}")
+            translator.downloadModelIfNeeded()
+                .addOnSuccessListener { dlOk = true; dlLatch.countDown() }
+                .addOnFailureListener { e -> dlErr = e; dlLatch.countDown() }
+
+            if (!dlLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                return null
+            }
+            if (!dlOk) return null
+
+            val trLatch = CountDownLatch(1)
+            var out: String? = null
+            translator.translate(src)
+                .addOnSuccessListener { t -> out = t; trLatch.countDown() }
+                .addOnFailureListener { trLatch.countDown() }
+
+            if (!trLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) return null
+            return out
         } finally {
             try { translator.close() } catch (_: Throwable) {}
         }
+    }
 
-        return out.get()
+    private fun detectLangBlocking(text: String, timeoutMs: Long): String? {
+        val client = LanguageIdentification.getClient()
+        val latch = CountDownLatch(1)
+        var lang: String? = null
+        client.identifyLanguage(text)
+            .addOnSuccessListener { code ->
+                // code can be "und"
+                lang = if (code == "und") null else code
+                latch.countDown()
+            }
+            .addOnFailureListener {
+                latch.countDown()
+            }
+        latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        return lang
+    }
+
+    private fun normalizeToMlKit(code: String): String? {
+        // ML Kit expects BCP-47-ish / TranslateLanguage constants.
+        // We just try map; fallback to null.
+        return try {
+            TranslateLanguage.fromLanguageTag(code)
+        } catch (_: Throwable) {
+            null
+        }
     }
 }
