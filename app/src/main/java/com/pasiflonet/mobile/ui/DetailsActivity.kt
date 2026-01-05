@@ -117,6 +117,8 @@ class DetailsActivity : AppCompatActivity() {
 
 setContentView(R.layout.activity_details)
 
+        // INIT_MEDIA_URI_FROM_INTENT
+        if (mediaUri == null) { mediaUri = resolveInitialMediaUri() }
         ivPreview = findViewById(R.id.ivPreview)
         ivWatermarkOverlay = findViewById(R.id.ivWatermarkOverlay)
         blurOverlay = findViewById(R.id.blurOverlay)
@@ -451,5 +453,32 @@ setContentView(R.layout.activity_details)
             }
         }.start()
     }
+
+    // RESOLVE_INITIAL_MEDIA_URI_BEGIN
+    private fun resolveInitialMediaUri(): Uri? {
+        // 1) direct Intent data
+        intent?.data?.let { return it }
+
+        // 2) common extra keys (string)
+        val keys = listOf(
+            com.pasiflonet.mobile.worker.SendWorker.KEY_MEDIA_URI,
+            "media_uri", "mediaUri", "uri", "src_uri", "srcUri", "path", "file_path", "file"
+        )
+
+        for (k in keys) {
+            val v = intent?.getStringExtra(k)?.trim().orEmpty()
+            if (v.isBlank()) continue
+
+            // absolute file path -> file://
+            if (v.startsWith("/")) return Uri.fromFile(File(v))
+
+            // content:// or file:// etc
+            return try { Uri.parse(v) } catch (_: Throwable) { null }
+        }
+
+        return null
+    }
+    // RESOLVE_INITIAL_MEDIA_URI_END
+
 
 }
