@@ -409,8 +409,11 @@ class OverlayEditorView @JvmOverloads constructor(
         return NRect(l, t, r, b)
     }
 
+    
+
+
     // PAS_BLUR_DEBUG_BEGIN
-    private val pasBlurStroke by lazy {
+    private val pasBlurStroke: android.graphics.Paint by lazy {
         android.graphics.Paint().apply {
             style = android.graphics.Paint.Style.STROKE
             strokeWidth = 4f
@@ -418,77 +421,54 @@ class OverlayEditorView @JvmOverloads constructor(
             isAntiAlias = true
         }
     }
-    private val pasBlurFill by lazy {
+    private val pasBlurFill: android.graphics.Paint by lazy {
         android.graphics.Paint().apply {
             style = android.graphics.Paint.Style.FILL
             color = android.graphics.Color.argb(60, 255, 0, 0)
         }
     }
 
-    private fun pasExtractRectF(obj: Any?): android.graphics.RectF? {
-        if (obj == null) return null
-        when (obj) {
-            is android.graphics.RectF -> return obj
-            is android.graphics.Rect -> return android.graphics.RectF(obj)
-        }
-        // Try common field names: l/t/r/b or left/top/right/bottom
-        runCatching {
-            val c = obj.javaClass
-            fun f(name: String) = c.declaredFields.firstOrNull { it.name.equals(name, true) }?.apply { isAccessible = True }
-        }.getOrNull()
-
-        // Reflection-based numeric fields
-        runCatching {
-            val c = obj.javaClass
-            def getf(n):
-                for ff in c.declaredFields:
-                    if ff.name.lower() == n.lower():
-                        ff.isAccessible = True
-                        v = ff.get(obj)
-                        if isinstance(v, (int, float)):
-                            return float(v)
-                return None
-        }.getOrNull()
-
-        return null
-    }
-
-    private fun pasGetAnyListByNameHint(hint: String): List<Any?> {
-        // Search fields then zero-arg getters that return List
+    private fun pasFindBlurList(): List<Any?> {
+        // מחפש שדה/Getter בשם שמכיל "blur" שמחזיר List
         val c = this.javaClass
+
         runCatching {
-            c.declaredFields.forEach { f ->
+            for (f in c.declaredFields) {
                 f.isAccessible = true
-                if (f.name.contains(hint, ignoreCase = true)) {
+                if (f.name.contains("blur", ignoreCase = true)) {
                     val v = f.get(this)
-                    if (v is List<*>) return v.filterNotNull()
+                    if (v is List<*>) return v.toList()
                 }
             }
         }
+
         runCatching {
-            c.declaredMethods.forEach { m ->
-                if (m.parameterTypes.isEmpty() && m.name.contains(hint, ignoreCase = true)) {
+            for (m in c.declaredMethods) {
+                if (m.parameterTypes.isEmpty() && m.name.contains("blur", ignoreCase = true)) {
                     m.isAccessible = true
                     val v = m.invoke(this)
-                    if (v is List<*>) return v.filterNotNull()
+                    if (v is List<*>) return v.toList()
                 }
             }
         }
+
         return emptyList()
     }
 
+    private fun pasToRectF(x: Any?): android.graphics.RectF? {
+        return when (x) {
+            is android.graphics.RectF -> x
+            is android.graphics.Rect -> android.graphics.RectF(x)
+            else -> null
+        }
+    }
+
     private fun pasDrawBlurDebug(canvas: android.graphics.Canvas) {
-        // We try to find "blurRects" list by name hint, and draw RectF items if present.
-        val items = pasGetAnyListByNameHint("blur")
+        val items = pasFindBlurList()
         if (items.isEmpty()) return
 
         for (it in items) {
-            val r = when (it) {
-                is android.graphics.RectF -> it
-                is android.graphics.Rect -> android.graphics.RectF(it)
-                else -> null
-            } ?: continue
-
+            val r = pasToRectF(it) ?: continue
             canvas.drawRect(r, pasBlurFill)
             canvas.drawRect(r, pasBlurStroke)
         }
