@@ -2,6 +2,7 @@ package com.pasiflonet.mobile.worker
 
 import android.content.Context
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -43,6 +44,29 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     private enum class Kind { PHOTO, VIDEO, ANIMATION, DOCUMENT }
 
     private data class RectN(val l: Float, val t: Float, val r: Float, val b: Float)
+
+    private fun detectKindFromMime(mime: String?, path: String?): Kind {
+        val m = (mime ?: "").lowercase().trim()
+        val ext = (path ?: "").lowercase()
+        return when {
+            m.startswith("video/") || ext.endswith(".mp4") || ext.endswith(".mov") || ext.endswith(".mkv") -> Kind.VIDEO
+            m.startswith("image/") || ext.endswith(".jpg") || ext.endswith(".jpeg") || ext.endswith(".png") || ext.endswith(".webp") -> Kind.PHOTO
+            else -> Kind.DOCUMENT
+        }
+    }
+
+    private fun uriToTempCopy(uri: Uri, tmpDir: File, name: String): File? {
+        return try {
+            val out = File(tmpDir, name)
+            applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(out).use { output -> input.copyTo(output) }
+            } ?: return null
+            if (out.exists() && out.length() > 0) out else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
 
     private data class MediaInfo(val kind: Kind, val fileId: Int)
 
@@ -123,6 +147,72 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     val lpOpts = TdApi.LinkPreviewOptions()
 
     val tmpDir = File(applicationContext.cacheDir, "pasiflonet_tmp").apply { mkdirs() }
+
+          // LOCAL_MEDIA_BRANCH_BEGIN
+          // If user picked a local file in the editor (media_uri), use it directly.
+          if (sendWithMedia && mediaUriStr.isNotBlank()) {
+              pushLine("LOCAL MEDIA: uri=" + mediaUriStr.take(300))
+              val uri = Uri.parse(mediaUriStr)
+
+              // try resolve mime
+              val mime = runCatching { applicationContext.contentResolver.getType(uri) }.getOrNull()
+              pushLine("LOCAL MEDIA: mime=" + (mime ?: "null"))
+
+              val kindGuess = detectKindFromMime(mime, mediaUriStr)
+              pushLine("LOCAL MEDIA: kind=" + kindGuess.name)
+
+              val inExt = when (kindGuess) {
+                  Kind.PHOTO -> "jpg"
+                  Kind.VIDEO, Kind.ANIMATION -> "mp4"
+                  else -> "bin"
+              }
+              val inputFile = uriToTempCopy(uri, tmpDir, "in_" + System.currentTimeMillis().toString() + "." + inExt)
+              if (inputFile == null) {
+                  pushLine("LOCAL MEDIA: failed to copy uri -> fallback to TEXT")
+              } else {
+                  val wmFile: File? = if (watermarkUriStr.isNotBlank()) {
+                      resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_" + System.currentTimeMillis().toString() + ".png")
+                  } else null
+                  val rects = parseRects(blurRectsStr)
+                  pushLine("EDITS: wm=" + (wmFile != null).toString() + " rects=" + rects.size.toString())
+
+                  val needEdits = (wmFile != null) || rects.isNotEmpty()
+                  val finalFile: File = if (!needEdits) inputFile else {
+                      val outFile = File(tmpDir, "out_" + System.currentTimeMillis().toString() + "." + inExt)
+                      val ok = runFfmpegEdits(
+                          input = inputFile,
+                          output = outFile,
+                          kind = kindGuess,
+                          rects = rects,
+                          wmFile = wmFile,
+                          wmX = wmX,
+                          wmY = wmY
+                      )
+                      if (!ok) {
+                          pushLine("FFMPEG: failed -> sending original")
+                          inputFile
+                      } else outFile
+                  }
+
+                  val captionFmt = TdApi.FormattedText(captionText, null)
+                  val content: TdApi.InputMessageContent = when (kindGuess) {
+                      Kind.PHOTO -> TdApi.InputMessagePhoto().apply { photo = TdApi.InputFileLocal(finalFile.absolutePath); caption = captionFmt }
+                      Kind.VIDEO -> TdApi.InputMessageVideo().apply { video = TdApi.InputFileLocal(finalFile.absolutePath); caption = captionFmt; supportsStreaming = true }
+                      Kind.ANIMATION -> TdApi.InputMessageAnimation().apply { animation = TdApi.InputFileLocal(finalFile.absolutePath); caption = captionFmt }
+                      else -> TdApi.InputMessageDocument().apply { document = TdApi.InputFileLocal(finalFile.absolutePath); caption = captionFmt }
+                  }
+
+                  val targetChatId = resolveTargetChatId(targetUsernameRaw)
+                      ?: run { pushLine("LOCAL MEDIA: resolveTargetChatId failed"); return Result.failure() }
+
+                  val sentOk = sendMessage(targetChatId, content)
+                  pushLine("LOCAL MEDIA: sent=" + sentOk.toString())
+                  return if (sentOk) Result.success() else Result.failure()
+              }
+          }
+          // LOCAL_MEDIA_BRANCH_END
+
+
 
 
           // PAS_LOCAL_MEDIA_BEGIN
@@ -472,13 +562,17 @@ val hasWm = wmFile != null
     if (hasWm) {
               val nx = wmX.coerceIn(0f, 1f)
               val ny = wmY.coerceIn(0f, 1f)
-              val outLabel2 = outLabel
-              // scale watermark relative to current video using scale2ref
-              val vScaled = "vwm"
-              val xExpr = "(${nx}*(main_w-overlay_w))"
-              val yExpr = "(${ny}*(main_h-overlay_h))"
-              filters += "[1:v][$cur]scale2ref=w=main_w*0.18:h=-1[wm][$vScaled]"
-              filters += "[$vScaled][wm]overlay=x=${xExpr}:y=${yExpr}:format=auto[$outLabel2]"
+
+              // scale watermark relative to main video/image width (~18%)
+              val xExpr = "(%s*(main_w-overlay_w))" % nx
+              val yExpr = "(%s*(main_h-overlay_h))" % ny
+
+              val wm0 = "wm0"
+              val vwm = "vwm"
+              // Important: watermark first, reference second
+              filters += "[1:v]format=rgba[%s]" % wm0
+              filters += "[%s][%s]scale2ref=w=main_w*0.18:h=-1[wm][%s]" % (wm0, cur, vwm)
+              filters += "[%s][wm]overlay=%s:%s:format=auto[%s]" % (vwm, xExpr, yExpr, outLabel)
           }
 
           val fc = filters.joinToString(";")
