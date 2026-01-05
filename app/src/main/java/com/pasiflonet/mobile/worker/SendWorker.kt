@@ -48,17 +48,32 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     private data class RectN(val l: Float, val t: Float, val r: Float, val b: Float)
 
     override fun doWork(): Result {
-        // PAS_FFMPEG_LOGS_BEGIN
         val logDir = File(applicationContext.getExternalFilesDir(null), "pasiflonet_logs").apply { mkdirs() }
         val logFile = File(logDir, "send_${System.currentTimeMillis()}.log")
+        val tail = ArrayDeque<String>(200)
 
         fun pushLine(line: String) {
             runCatching { logFile.appendText(line + "\n") }
+            if (tail.size >= 200) tail.removeFirst()
+            tail.addLast(line.take(500))
+            setProgressAsync(workDataOf(KEY_LOG_TAIL to tail.joinToString("\n")))
+        }
+
+        try {
+            pushLine("=== SendWorker started ===")
+
+            com.arthenica.ffmpegkit.FFmpegKitConfig.enableLogCallback { log ->
+                pushLine("[FFMPEG ${'$'}{log.level}] ${'$'}{log.message}")
+            }
+
+            // === EXISTING SEND LOGIC CONTINUES BELOW ===
+
+        // PAS_FFMPEG_LOGS_BEGIN
+        
             runCatching { setProgressAsync(androidx.work.workDataOf(KEY_LOG_TAIL to line, KEY_LOG_FILE to logFile.absolutePath)) }
         }
 
-        FFmpegKitConfig.enableLogCallback { log: Log ->
-            pushLine("[ffmpeg] ${log.level}: ${log.message}")
+        : ${log.message}")
         }
         FFmpegKitConfig.enableStatisticsCallback { stat: Statistics ->
             pushLine("[stat] time=${stat.time}ms size=${stat.size} bitrate=${stat.bitrate} speed=${stat.speed}")
@@ -67,12 +82,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
 
 
         // PAS_SENDWORKER_LOG_V1
-        val logDir = java.io.File((applicationContext.getExternalFilesDir(null) ?: applicationContext.filesDir), "pasiflonet_logs").apply { mkdirs() }
-        val logFile = java.io.File(logDir, "send_${System.currentTimeMillis()}.log")
-        val tail = java.util.ArrayDeque<String>(240)
-
-        fun pushLine(line: String) {
-            kotlin.runCatching { logFile.appendText(line + "\n") }
+        
             if (tail.size >= 240) tail.removeFirst()
             tail.addLast(line.take(500))
             val joined = tail.joinToString("\n")
@@ -81,8 +91,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
 
         // Attach FFmpegKit log callbacks (live)
         kotlin.runCatching {
-            com.arthenica.ffmpegkit.FFmpegKitConfig.enableLogCallback { l ->
-                try { pushLine("FFMPEG: " + (l.message ?: "")) } catch (_: Throwable) {}
+            com.arthenica.ffmpegkit. catch (_: Throwable) {}
             }
             com.arthenica.ffmpegkit.FFmpegKitConfig.enableStatisticsCallback { st ->
                 try { pushLine("STAT: t=" + st.time + " ms, size=" + st.size + ", bitrate=" + st.bitrate + ", speed=" + st.speed) } catch (_: Throwable) {}
@@ -95,12 +104,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             // PAS_FFMPEG_LOG_BRIDGE_BEGIN
             // Bridge FFmpegKit logs -> pushLine (so UI/progress/file see them)
             try {
-                FFmpegKitConfig.enableLogCallback { log ->
-                    try {
-                        val msg = log?.message ?: return@enableLogCallback
-                        // keep it short
-                        pushLine("FF: " + msg.take(500))
-                    } catch (_: Throwable) {}
+                 catch (_: Throwable) {}
                 }
             } catch (t: Throwable) {
                 pushLine("WARN: cannot enable FFmpeg log callback: " + (t.message ?: t.javaClass.simpleName))
@@ -140,10 +144,7 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
 
         // Live FFmpegKit logs -> progress (shows on screen via observer)
         runCatching {
-            com.arthenica.ffmpegkit.FFmpegKitConfig.enableLogCallback { lg ->
-                val msg = lg.message?.trim()
-                if (!msg.isNullOrBlank()) pushLine(msg)
-            }
+            com.arthenica.ffmpegkit.
         }
 
         try {
@@ -326,7 +327,21 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
                 )
             )
         }
-}
+
+            pushLine("=== SendWorker finished ===")
+            return Result.success(workDataOf(KEY_LOG_FILE to logFile.absolutePath))
+        } catch (t: Throwable) {
+            pushLine("FAILED: " + (t.message ?: t.javaClass.simpleName))
+            pushLine(android.util.Log.getStackTraceString(t))
+            return Result.failure(
+                workDataOf(
+                    KEY_ERROR_MSG to (t.message ?: "send failed"),
+                    KEY_LOG_FILE to logFile.absolutePath,
+                    KEY_LOG_TAIL to tail.joinToString("\n")
+                )
+            )
+        }
+
 
     private fun cleanupTmp(tmpDir: File) {
         val files = tmpDir.listFiles() ?: return
