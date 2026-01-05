@@ -86,9 +86,9 @@ class MainActivity : AppCompatActivity() {
 
         // CLEAR_TEMP_BUTTON_PATCH
         try {
-            val btn = findViewById<android.view.View>(R.id.btn_clear_temp)
+            val btn = findViewById<android.view.View>(R.id.findViewById<android.view.View>(R.id.btn_clear_temp))
             btn.setOnClickListener {
-                val (files, bytes) = TempCleaner.clearTemp(this)
+                val (files, bytes) = TempCleaner.TempCleaner.clearTemp(this)
                 val mb = (bytes.toDouble() / (1024.0*1024.0))
                 android.widget.Toast.makeText(this, "נוקו $files קבצים זמניים (${String.format("%.1f", mb)}MB)", android.widget.Toast.LENGTH_LONG).show()
             }

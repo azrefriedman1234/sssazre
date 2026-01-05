@@ -5,6 +5,36 @@ import java.io.File
 import kotlin.math.roundToLong
 
 object TempCleaner {
+    // SAFE clear: delete only cacheDir/pasiflonet_tmp (+ externalCacheDir/pasiflonet_tmp)
+    fun clearTemp(ctx: android.content.Context): Pair<Int, Long> {
+        var files = 0
+        var bytes = 0L
+
+        fun deleteRec(f: File) {
+            if (!f.exists()) return
+            if (f.isDirectory) {
+                f.listFiles()?.forEach { deleteRec(it) }
+            }
+            val len = try { if (f.isFile) f.length() else 0L } catch (_: Throwable) { 0L }
+            if (f.delete()) { files += 1; bytes += len }
+        }
+
+        try {
+            val d = File(ctx.cacheDir, "pasiflonet_tmp")
+            deleteRec(d)
+        } catch (_: Throwable) { }
+
+        try {
+            val ext = ctx.externalCacheDir
+            if (ext != null) {
+                val d2 = File(ext, "pasiflonet_tmp")
+                deleteRec(d2)
+            }
+        } catch (_: Throwable) { }
+
+        return files to bytes
+    }
+
 
     data class Result(val deletedFiles: Int, val freedBytes: Long)
 
