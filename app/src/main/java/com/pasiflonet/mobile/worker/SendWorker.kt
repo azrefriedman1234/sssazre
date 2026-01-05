@@ -16,7 +16,10 @@ import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
-import com.arthenica.ffmpegkit.Config
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.Log
+import com.arthenica.ffmpegkit.Statistics
+
 
 class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appContext, params) {
 
@@ -46,6 +49,24 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
     private data class RectN(val l: Float, val t: Float, val r: Float, val b: Float)
 
     override fun doWork(): Result {
+        // PAS_FFMPEG_LOGS_BEGIN
+        val logDir = File(applicationContext.getExternalFilesDir(null), "pasiflonet_logs").apply { mkdirs() }
+        val logFile = File(logDir, "send_${System.currentTimeMillis()}.log")
+
+        fun pushLine(line: String) {
+            runCatching { logFile.appendText(line + "\n") }
+            runCatching { setProgressAsync(androidx.work.workDataOf(KEY_LOG_TAIL to line, KEY_LOG_FILE to logFile.absolutePath)) }
+        }
+
+        FFmpegKitConfig.enableLogCallback { log: Log ->
+            pushLine("[ffmpeg] ${log.level}: ${log.message}")
+        }
+        FFmpegKitConfig.enableStatisticsCallback { stat: Statistics ->
+            pushLine("[stat] time=${stat.time}ms size=${stat.size} bitrate=${stat.bitrate} speed=${stat.speed}")
+        }
+        // PAS_FFMPEG_LOGS_END
+
+
         // PAS_SENDWORKER_LOG_V1
         val logDir = java.io.File((applicationContext.getExternalFilesDir(null) ?: applicationContext.filesDir), "pasiflonet_logs").apply { mkdirs() }
         val logFile = java.io.File(logDir, "send_${System.currentTimeMillis()}.log")
@@ -75,7 +96,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             // PAS_FFMPEG_LOG_BRIDGE_BEGIN
             // Bridge FFmpegKit logs -> pushLine (so UI/progress/file see them)
             try {
-                Config.enableLogCallback { log ->
+                FFmpegKitConfig.enableLogCallback { log ->
                     try {
                         val msg = log?.message ?: return@enableLogCallback
                         // keep it short
