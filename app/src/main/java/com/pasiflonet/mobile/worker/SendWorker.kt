@@ -17,7 +17,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import com.arthenica.ffmpegkit.FFmpegKitConfig
-import com.arthenica.ffmpegkit.Log
 import com.arthenica.ffmpegkit.Statistics
 
 
@@ -299,7 +298,7 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
         }
     
         } catch (t: Throwable) {
-            android.util.Log.e(TAG, "SendWorker crash", t)
+            android.util.android.util.Log.e(TAG, "SendWorker crash", t)
             val msg = (t.message ?: t.javaClass.simpleName).take(300)
             pushLine("=== FAILED: $msg ===")
             pushLine("RETURN: Result.failure")
@@ -314,10 +313,10 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
 
 
         } catch (t: Throwable) {
-            android.util.Log.e(TAG, "SendWorker crash", t)
+            android.util.android.util.Log.e(TAG, "SendWorker crash", t)
             val msg = (t.message ?: t.javaClass.simpleName).take(300)
             try { pushLine("=== FAILED: " + msg + " ===") } catch (_: Throwable) {}
-            try { pushLine(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            try { pushLine(android.util.android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
             pushLine("RETURN: Result.failure")
             return Result.failure(
                 androidx.work.workDataOf(
@@ -340,8 +339,8 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
         logI("cleanupTmp: deleted=$n in ${tmpDir.absolutePath}")
     }
 
-    private fun logI(msg: String) = Log.i(TAG, msg)
-    private fun logE(msg: String, t: Throwable? = null) = Log.e(TAG, msg, t)
+    private fun logI(msg: String) = android.util.Log.i(TAG, msg)
+    private fun logE(msg: String, t: Throwable? = null) = android.util.Log.e(TAG, msg, t)
 
     private fun parseRects(s: String): List<RectN> {
         if (s.isBlank()) return emptyList()
