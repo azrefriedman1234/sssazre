@@ -353,7 +353,7 @@ setContentView(R.layout.activity_details)
             .putFloat(SendWorker.KEY_WM_Y, wmY)
             .build()
 
-        val req = OneTimeWorkRequestBuilder<SendWorker>().addTag("SEND_WORK").addTag(com.pasiflonet.mobile.worker.SendWorker.TAG_SEND).addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK")
+        val req = OneTimeWorkRequestBuilder<SendWorker>().addTag("SEND_WORK").addTag("SEND_WORK").addTag(com.pasiflonet.mobile.worker.SendWorker.TAG_SEND).addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK")
             .setInputData(data)
             .build()
 
@@ -410,53 +410,4 @@ setContentView(R.layout.activity_details)
     }
 
 
-    // === SEND_LOG_UI_BEGIN ===
-    private var pasLogDialog: androidx.appcompat.app.AlertDialog? = null
-    private var pasLogTextView: android.widget.TextView? = null
-
-    private fun pasShowLogDialog(text: String) {
-        if (pasLogDialog == null) {
-            val tv = android.widget.TextView(this).apply {
-                setPadding(32, 24, 32, 24)
-                setTextIsSelectable(true)
-                typeface = android.graphics.Typeface.MONOSPACE
-            }
-            val scroll = android.widget.ScrollView(this).apply { addView(tv) }
-            pasLogTextView = tv
-            pasLogDialog = androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("FFmpeg / Send logs")
-                .setView(scroll)
-                .setPositiveButton("Close") { d, _ -> d.dismiss() }
-                .create()
-            pasLogDialog!!.show()
-        }
-        pasLogTextView?.text = text
     }
-
-    private fun pasInitSendLogsUi() {
-        androidx.work.WorkManager.getInstance(this)
-            .getWorkInfosByTagLiveData("SEND_WORK")
-            .observe(this) { list ->
-                if (list.isNullOrEmpty()) return@observe
-                val info = list.maxByOrNull { it.runAttemptCount } ?: list.last()
-
-                val tail =
-                    info.progress.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
-                        ?: info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
-                        ?: ""
-
-                if (tail.isNotBlank()) pasShowLogDialog(tail)
-
-                if (info.state == androidx.work.WorkInfo.State.FAILED) {
-                    val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
-                    val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
-                    val msg = "ERROR: " + err + "\n\n" + tail + "\n\nLOG FILE: " + logFile
-                    pasShowLogDialog(msg)
-                    android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
-                }
-            }
-    }
-    // === SEND_LOG_UI_END ===
-
-
-}
