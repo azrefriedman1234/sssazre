@@ -30,9 +30,8 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     // LIVE_LIST_BEGIN
-    private val liveMsgs = ArrayList<TdApi.Message>()
+    private val liveMsgs.clear(); liveMsgs.addAll(ArrayList<TdApi.Message>())
     // LIVE_LIST_END
-
 
     private lateinit var recycler: RecyclerView
     private lateinit var btnClearTemp: Button
@@ -44,16 +43,14 @@ class MainActivity : AppCompatActivity() {
 
     private val updateListener: (TdApi.Object) -> Unit = { obj ->
         if (obj is TdApi.UpdateNewMessage) {
-            // LIVE_UPDATE_UI_PATCH
-            // Ensure UI list updates on main thread
-            try {
-                val msg = val m = obj.message
-
-            // push newest first
+            val m = obj.message
+            // newest first
             liveMsgs.add(0, m)
             if (liveMsgs.size > 200) liveMsgs.removeAt(liveMsgs.size - 1)
             runOnUiThread {
-                adapter.submit(liveMsgs)
+                adapter.notifyDataSetChanged()
+            }
+
             }
                 ui {
                     try {
@@ -97,9 +94,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-
         // CLEAR_TEMP_BTN_BEGIN
-        val btnClearTemp = findViewById<View>(R.id.btn_clear_temp)
+        val btnClearTemp = findViewById<View>(R.id.btnSettings)
         btnClearTemp.setOnClickListener {
             val (files, bytes) = TempCleaner.clearTemp(this)
             Toast.makeText(this, "נוקו $files קבצים (" + (bytes/1024) + "KB)", Toast.LENGTH_SHORT).show()
