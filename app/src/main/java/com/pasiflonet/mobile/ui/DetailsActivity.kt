@@ -93,8 +93,34 @@ class DetailsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        observeSendWorkLogs()
+
+
+        // Live logs from SendWorker by tag (works even if req variable name differs)
+        androidx.work.WorkManager.getInstance(this)
+            .getWorkInfosByTagLiveData("SEND_WORK")
+            .observe(this) { list ->
+                if (list.isNullOrEmpty()) return@observe
+                val info = list.maxByOrNull { it.runAttemptCount } ?: list.last()
+
+                val tail =
+                    info.progress.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
+                        ?: info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
+                        ?: ""
+
+                if (tail.isNotBlank()) showOrUpdateLogDialog(tail)
+
+                if (info.state == androidx.work.WorkInfo.State.FAILED) {
+                    val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
+                    val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
+                    showOrUpdateLogDialog("ERROR: ${err}
+
+${tail}
+
+LOG FILE: ${logFile}")
+                    android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+
 setContentView(R.layout.activity_details)
 
         ivPreview = findViewById(R.id.ivPreview)
@@ -326,7 +352,7 @@ setContentView(R.layout.activity_details)
             .putFloat(SendWorker.KEY_WM_Y, wmY)
             .build()
 
-        val req = OneTimeWorkRequestBuilder<SendWorker>().addTag("SEND_WORK").addTag("SEND_WORK")
+        val req = OneTimeWorkRequestBuilder<SendWorker>().addTag("SEND_WORK").addTag("SEND_WORK").addTag("SEND_WORK")
             .setInputData(data)
             .build()
 
