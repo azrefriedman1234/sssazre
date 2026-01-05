@@ -238,6 +238,7 @@ class OverlayEditorView @JvmOverloads constructor(
 
 
 
+
         // PAS_DRAW_BLUR_RECT_PREVIEW_V2
         runCatching {
             val stroke = android.graphics.Paint().apply {
@@ -258,11 +259,12 @@ class OverlayEditorView @JvmOverloads constructor(
                         val f = o.javaClass.getDeclaredField(n)
                         f.isAccessible = true
                         val v = f.get(o)
-                        when (v) {
-                            is Float -> return v
-                            is Double -> return v.toFloat()
-                            is Int -> return v.toFloat()
-                            is Long -> return v.toFloat()
+                        return when (v) {
+                            is Float -> v
+                            is Double -> v.toFloat()
+                            is Int -> v.toFloat()
+                            is Long -> v.toFloat()
+                            else -> null
                         }
                     }
                 }
@@ -270,7 +272,6 @@ class OverlayEditorView @JvmOverloads constructor(
             }
 
             val candidates = mutableListOf<Any>()
-            // find any List field containing "blur"
             for (f in this.javaClass.declaredFields) {
                 if (!f.name.contains("blur", ignoreCase = true)) continue
                 f.isAccessible = true
@@ -287,17 +288,20 @@ class OverlayEditorView @JvmOverloads constructor(
                 val r = getFloat(o, listOf("r","right","x2")) ?: continue
                 val b = getFloat(o, listOf("b","bottom","y2")) ?: continue
 
-                // if looks normalized (0..1), map to view pixels; else assume pixels
-                val nl = if (l <= 1.5f and r <= 1.5f) l * vw else l
-                val nt = if (t <= 1.5f and b <= 1.5f) t * vh else t
-                val nr = if (l <= 1.5f and r <= 1.5f) r * vw else r
-                val nb = if (t <= 1.5f and b <= 1.5f) b * vh else b
+                val normalized = (l >= 0f && t >= 0f && r >= 0f && b >= 0f &&
+                                  l <= 1.5f && t <= 1.5f && r <= 1.5f && b <= 1.5f)
+
+                val nl = if (normalized) l * vw else l
+                val nt = if (normalized) t * vh else t
+                val nr = if (normalized) r * vw else r
+                val nb = if (normalized) b * vh else b
 
                 val rc = android.graphics.RectF(nl, nt, nr, nb)
                 canvas.drawRect(rc, fill)
                 canvas.drawRect(rc, stroke)
             }
         }
+
 
 }
 
