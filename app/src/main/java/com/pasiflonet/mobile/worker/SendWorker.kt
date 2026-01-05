@@ -142,7 +142,94 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             }
 
             // 5) with media
-            if (srcChatId == 0L || srcMsgId == 0L) {
+            
+
+            // === Local media (from editor) support ===
+            val localMediaUriStr = inputData.getString(KEY_MEDIA_URI).orEmpty().trim()
+            val localMediaMime = inputData.getString(KEY_MEDIA_MIME).orEmpty().trim()
+
+            if (localMediaUriStr.isNotBlank()) {
+                val uri = Uri.parse(localMediaUriStr)
+
+                val kindFromMime = when {
+                    localMediaMime.equals("image/gif", ignoreCase = true) -> Kind.ANIMATION
+                    localMediaMime.startsWith("image/", ignoreCase = true) -> Kind.PHOTO
+                    localMediaMime.startsWith("video/", ignoreCase = true) -> Kind.VIDEO
+                    else -> Kind.DOCUMENT
+                }
+
+                val inExt = when (kindFromMime) {
+                    Kind.PHOTO -> "jpg"
+                    Kind.VIDEO -> "mp4"
+                    Kind.ANIMATION -> "mp4"
+                    else -> "bin"
+                }
+
+                val inputFileLocal = resolveUriToTempFile(uri, tmpDir, "in_${System.currentTimeMillis()}.$inExt")
+                    ?: run {
+                        logE("local media_uri open failed: $localMediaUriStr")
+                        pushLine("RETURN: Result.failure (media_uri open failed)")
+                        return Result.failure()
+                    }
+
+                // watermark file (אם יש)
+                val wmFileLocal: File? = if (watermarkUriStr.isNotBlank()) {
+                    resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_${System.currentTimeMillis()}.png")
+                } else null
+
+                // blur rects
+                val rectsLocal = parseRects(blurRectsStr)
+                val needEditsLocal = (wmFileLocal != null) || rectsLocal.isNotEmpty()
+
+                val finalFileLocal: File = if (!needEditsLocal) {
+                    inputFileLocal
+                } else {
+                    val outExt = when (kindFromMime) {
+                        Kind.PHOTO -> "jpg"
+                        Kind.VIDEO -> "mp4"
+                        Kind.ANIMATION -> "mp4"
+                        else -> "bin"
+                    }
+                    val outFile = File(tmpDir, "out_${System.currentTimeMillis()}.$outExt")
+                    val ok = runFfmpegEdits(
+                        input = inputFileLocal,
+                        output = outFile,
+                        kind = kindFromMime,
+                        rects = rectsLocal,
+                        wmFile = wmFileLocal,
+                        wmX = wmX,
+                        wmY = wmY
+                    )
+                    if (!ok) inputFileLocal else outFile
+                }
+
+                val input = TdApi.InputFileLocal(finalFileLocal.absolutePath)
+                val content: TdApi.InputMessageContent = when (kindFromMime) {
+                    Kind.PHOTO -> TdApi.InputMessagePhoto().apply {
+                        photo = input
+                        caption = captionFmt
+                    }
+                    Kind.VIDEO -> TdApi.InputMessageVideo().apply {
+                        video = input
+                        caption = captionFmt
+                        supportsStreaming = true
+                    }
+                    Kind.ANIMATION -> TdApi.InputMessageAnimation().apply {
+                        animation = input
+                        caption = captionFmt
+                    }
+                    else -> TdApi.InputMessageDocument().apply {
+                        document = input
+                        caption = captionFmt
+                    }
+                }
+
+                val sentOk = sendMessage(targetChatId, content)
+                logI("sent LOCAL media kind=$kindFromMime edited=$needEditsLocal final=${finalFileLocal.name} ok=$sentOk")
+                return if (sentOk) Result.success() else Result.failure()
+            }
+
+if (srcChatId == 0L || srcMsgId == 0L) {
                 logE("missing src ids")
                 pushLine("RETURN: Result.failure")
                 return Result.failure(

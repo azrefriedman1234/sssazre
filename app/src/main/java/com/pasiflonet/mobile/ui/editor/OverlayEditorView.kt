@@ -173,7 +173,7 @@ class OverlayEditorView @JvmOverloads constructor(
         // 3) draw watermark
         val wm = watermarkBitmap ?: return
         // watermark size relative to view
-        val targetW = dst.width() * 0.18f
+        val targetW = dst.width() * 0.12f
         val scale = targetW / max(1f, wm.width.toFloat())
         val targetH = wm.height.toFloat() * scale
 
@@ -232,7 +232,7 @@ class OverlayEditorView @JvmOverloads constructor(
                 if (mode == Mode.DRAG_WM) {
                     val wm = watermarkBitmap
                     if (wm != null) {
-                        val targetW = dst.width() * 0.18f
+                        val targetW = dst.width() * 0.12f
                         val scale = targetW / max(1f, wm.width.toFloat())
                         val targetH = wm.height.toFloat() * scale
 
@@ -287,7 +287,7 @@ class OverlayEditorView @JvmOverloads constructor(
     private fun hitTestWatermark(x: Float, y: Float): RectF? {
         val wm = watermarkBitmap ?: return null
         dst.set(0f, 0f, width.toFloat(), height.toFloat())
-        val targetW = dst.width() * 0.18f
+        val targetW = dst.width() * 0.12f
         val scale = targetW / max(1f, wm.width.toFloat())
         val targetH = wm.height.toFloat() * scale
 
@@ -372,5 +372,59 @@ class OverlayEditorView @JvmOverloads constructor(
         }
     }
     // PAS_BLUR_DEBUG_END
+
+
+
+    // Export blur rects as "l,t,r,b;..." in 0..1 normalized coordinates (matches SendWorker.parseRects)
+    fun exportBlurRects(): String {
+        return try {
+            val out = mutableListOf<String>()
+            val fieldNames = listOf("blurRects", "mBlurRects", "rects", "blurRectList")
+            for (fn in fieldNames) {
+                val f = runCatching { this::class.java.getDeclaredField(fn).apply { isAccessible = true } }.getOrNull()
+                    ?: continue
+                val v = runCatching { f.get(this) }.getOrNull() ?: continue
+
+                val list = when (v) {
+                    is java.util.List<*> -> v
+                    else -> continue
+                }
+
+                for (it in list) {
+                    if (it == null) continue
+                    when (it) {
+                        is android.graphics.RectF -> {
+                            val n = rectPxToNorm(it).norm()
+                            out += "${n.l},${n.t},${n.r},${n.b}"
+                        }
+                        is android.graphics.Rect -> {
+                            val rf = android.graphics.RectF(it)
+                            val n = rectPxToNorm(rf).norm()
+                            out += "${n.l},${n.t},${n.r},${n.b}"
+                        }
+                        else -> {
+                            val c = it.javaClass
+                            fun gf(n: String): Float? = runCatching {
+                                val ff = c.getDeclaredField(n).apply { isAccessible = true }
+                                (ff.get(it) as? Number)?.toFloat()
+                            }.getOrNull()
+                            val l = gf("l"); val t = gf("t"); val r = gf("r"); val b = gf("b")
+                            if (l != null && t != null && r != null && b != null) {
+                                val ll = l.coerceIn(0f, 1f)
+                                val tt = t.coerceIn(0f, 1f)
+                                val rr = r.coerceIn(0f, 1f)
+                                val bb = b.coerceIn(0f, 1f)
+                                if (rr > ll && bb > tt) out += "$ll,$tt,$rr,$bb"
+                            }
+                        }
+                    }
+                }
+            }
+            out.distinct().joinToString(";")
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
 
 }
