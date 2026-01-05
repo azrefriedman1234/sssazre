@@ -7,3 +7,6 @@ local.properties
 # local backups
 *.bak
 *.bak*
+
+# local broken backups
+app/src/main/java/com/pasiflonet/mobile/ui/DetailsActivity.kt.broken_*
