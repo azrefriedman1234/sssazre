@@ -97,7 +97,7 @@ class DetailsActivity : AppCompatActivity() {
 
         
         pasInitSendLogsUi()
-initSendWorkLogs()// Live logs from SendWorker by tag (works even if req variable name differs)
+pasInitSendLogsUi()// Live logs from SendWorker by tag (works even if req variable name differs)
         androidx.work.WorkManager.getInstance(this)
             .getWorkInfosByTagLiveData("SEND_WORK")
             .observe(this) { list ->
@@ -427,22 +427,6 @@ setContentView(R.layout.activity_details)
                 val tail =
                     info.progress.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
                         ?: info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
-                        ?: ""
-
-                if (tail.isNotBlank()) pasShowLogDialog(tail)
-
-                if (info.state == androidx.work.WorkInfo.State.FAILED) {
-                    val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
-                    val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
-                    val msg = "ERROR: " + err + "
-
-" + tail + "
-
-LOG FILE:
-" + logFile
-                    pasShowLogDialog(msg)
-                    android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
-                }
             }
     }
     // === SEND_LOG_UI_END ===
