@@ -112,11 +112,10 @@ class DetailsActivity : AppCompatActivity() {
                 if (info.state == androidx.work.WorkInfo.State.FAILED) {
                     val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
                     val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
-                    showOrUpdateLogDialog("ERROR: ${err}
+                    val msg = "ERROR: " + err + "
 
-${tail}
-
-LOG FILE: ${logFile}")
+" + tail + "
+                    showOrUpdateLogDialog(msg)
                     android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
