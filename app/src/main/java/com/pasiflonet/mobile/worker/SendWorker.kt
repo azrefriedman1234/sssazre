@@ -1,24 +1,21 @@
 package com.pasiflonet.mobile.worker
-import java.util.ArrayDeque
-import androidx.work.workDataOf
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
+import com.arthenica.ffmpegkit.Statistics
 import com.pasiflonet.mobile.td.TdLibManager
 import org.drinkless.tdlib.TdApi
 import java.io.File
 import java.io.FileOutputStream
+import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
-import com.arthenica.ffmpegkit.FFmpegKitConfig
-import com.arthenica.ffmpegkit.Statistics
-
 
 class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appContext, params) {
 
@@ -47,7 +44,10 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
 
     private data class RectN(val l: Float, val t: Float, val r: Float, val b: Float)
 
+    private data class MediaInfo(val kind: Kind, val fileId: Int)
+
     override fun doWork(): Result {
+        // 1) log file + tail
         val logDir = File(applicationContext.getExternalFilesDir(null), "pasiflonet_logs").apply { mkdirs() }
         val logFile = File(logDir, "send_${System.currentTimeMillis()}.log")
         val tail = ArrayDeque<String>(200)
@@ -59,97 +59,29 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
             setProgressAsync(workDataOf(KEY_LOG_TAIL to tail.joinToString("\n")))
         }
 
-        try {
-            pushLine("=== SendWorker started ===")
+        pushLine("=== SendWorker started ===")
+        pushLine("INPUT: " + inputData.keyValueMap.toString())
+        pushLine("Thread=" + Thread.currentThread().name)
 
-            com.arthenica.ffmpegkit.FFmpegKitConfig.enableLogCallback { log ->
-                pushLine("[FFMPEG ${'$'}{log.level}] ${'$'}{log.message}")
-            }
-
-            // === EXISTING SEND LOGIC CONTINUES BELOW ===
-
-        // PAS_FFMPEG_LOGS_BEGIN
-        
-            runCatching { setProgressAsync(androidx.work.workDataOf(KEY_LOG_TAIL to line, KEY_LOG_FILE to logFile.absolutePath)) }
-        }
-
-        : ${log.message}")
-        }
-        FFmpegKitConfig.enableStatisticsCallback { stat: Statistics ->
-            pushLine("[stat] time=${stat.time}ms size=${stat.size} bitrate=${stat.bitrate} speed=${stat.speed}")
-        }
-        // PAS_FFMPEG_LOGS_END
-
-
-        // PAS_SENDWORKER_LOG_V1
-        
-            if (tail.size >= 240) tail.removeFirst()
-            tail.addLast(line.take(500))
-            val joined = tail.joinToString("\n")
-            kotlin.runCatching { setProgressAsync(androidx.work.workDataOf(KEY_LOG_TAIL to joined)) }
-        }
-
-        // Attach FFmpegKit log callbacks (live)
-        kotlin.runCatching {
-            com.arthenica.ffmpegkit. catch (_: Throwable) {}
-            }
-            com.arthenica.ffmpegkit.FFmpegKitConfig.enableStatisticsCallback { st ->
-                try { pushLine("STAT: t=" + st.time + " ms, size=" + st.size + ", bitrate=" + st.bitrate + ", speed=" + st.speed) } catch (_: Throwable) {}
-            }
-        }
-
-        try {
-            pushLine("=== SendWorker started ===")
-            
-            // PAS_FFMPEG_LOG_BRIDGE_BEGIN
-            // Bridge FFmpegKit logs -> pushLine (so UI/progress/file see them)
-            try {
-                 catch (_: Throwable) {}
-                }
-            } catch (t: Throwable) {
-                pushLine("WARN: cannot enable FFmpeg log callback: " + (t.message ?: t.javaClass.simpleName))
-            }
-            // PAS_FFMPEG_LOG_BRIDGE_END
-
-        // PAS_RUN_FFMPEG_BLOCKING_BEGIN
-        fun runFfmpegBlocking(cmd: String): Boolean {
-            pushLine("FFMPEG CMD: " + cmd)
-            val session = FFmpegKit.execute(cmd)
-            val rc = session.returnCode
-            val failStack = runCatching { session.failStackTrace }.getOrNull()
-            val out = runCatching { session.allLogsAsString }.getOrNull()
-
-            pushLine("FFMPEG RC: " + (rc?.toString() ?: "null"))
-            if (out != null && out.isNotBlank()) {
-                for (ln in out.lines().takeLast(200)) pushLine("FF: " + ln.take(500))
-            }
-            if (failStack != null && failStack.isNotBlank()) pushLine("FFMPEG FAIL: " + failStack.take(800))
-
-            return rc != null && ReturnCode.isSuccess(rc)
-        }
-        // PAS_RUN_FFMPEG_BLOCKING_END
-pushLine("INPUT: " + inputData.keyValueMap.toString())
-            pushLine("Thread=" + Thread.currentThread().name)
-
-
-        val logFile = File(applicationContext.cacheDir, "ffmpeg_${System.currentTimeMillis()}.log")
-        val tail = ArrayDeque<String>(200)
-
-        fun pushLine(line: String) {
-            runCatching { logFile.appendText(line + "\n") }
-            if (tail.size >= 200) tail.removeFirst()
-            tail.addLast(line.take(400))
-            setProgressAsync(workDataOf(KEY_LOG_TAIL to tail.joinToString("\n")))
-        }
-
-        // Live FFmpegKit logs -> progress (shows on screen via observer)
+        // 2) FFmpegKit logs -> pushLine (best effort)
         runCatching {
-            com.arthenica.ffmpegkit.
+            FFmpegKitConfig.enableLogCallback { log ->
+                try {
+                    pushLine("[FFMPEG ${log.level}] ${log.message}")
+                } catch (_: Throwable) {
+                }
+            }
+            FFmpegKitConfig.enableStatisticsCallback { st: Statistics ->
+                try {
+                    pushLine("STAT: t=${st.time} size=${st.size} br=${st.bitrate} sp=${st.speed}")
+                } catch (_: Throwable) {
+                }
+            }
+        }.onFailure { t ->
+            pushLine("WARN: cannot enable FFmpegKit callbacks: " + (t.message ?: t.javaClass.simpleName))
         }
 
-        try {
-            pushLine("=== SendWorker started ===")
-
+        // 3) read inputs
         val srcChatId = inputData.getLong(KEY_SRC_CHAT_ID, 0L)
         val srcMsgId = inputData.getLong(KEY_SRC_MESSAGE_ID, 0L)
         val targetUsernameRaw = inputData.getString(KEY_TARGET_USERNAME).orEmpty().trim()
@@ -163,77 +95,140 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
 
         val tmpDir = File(applicationContext.cacheDir, "pasiflonet_tmp").apply { mkdirs() }
 
-        logI("start: sendWithMedia=$sendWithMedia srcChatId=$srcChatId srcMsgId=$srcMsgId target=$targetUsernameRaw")
-
         try {
+            logI("start: sendWithMedia=$sendWithMedia srcChatId=$srcChatId srcMsgId=$srcMsgId target=$targetUsernameRaw")
+
             TdLibManager.init(applicationContext)
             TdLibManager.ensureClient()
 
             val targetChatId = resolveTargetChatId(targetUsernameRaw)
                 ?: run {
                     logE("resolveTargetChatId failed for '$targetUsernameRaw'")
-            pushLine("RETURN: Result.failure")
-                    return Result.failure()
+                    pushLine("RETURN: Result.failure")
+                    return Result.failure(
+                        workDataOf(
+                            KEY_ERROR_MSG to "Cannot resolve target chat",
+                            KEY_LOG_FILE to logFile.absolutePath,
+                            KEY_LOG_TAIL to tail.joinToString("\n")
+                        )
+                    )
                 }
 
             val captionFmt = TdApi.FormattedText(captionText, null)
-            val lpOpts = TdApi.LinkPreviewOptions() // נדרש ב-TDLib החדשים
+            val lpOpts = TdApi.LinkPreviewOptions()
 
+            // 4) TEXT only
             if (!sendWithMedia) {
                 val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) return Result.failure()
+                if (!sendMessage(targetChatId, content)) {
+                    logE("send TEXT only failed")
+                    pushLine("RETURN: Result.failure")
+                    return Result.failure(
+                        workDataOf(
+                            KEY_ERROR_MSG to "send text failed",
+                            KEY_LOG_FILE to logFile.absolutePath,
+                            KEY_LOG_TAIL to tail.joinToString("\n")
+                        )
+                    )
+                }
                 logI("sent TEXT only OK")
-            pushLine("RETURN: Result.success")
-                return Result.success()
+                pushLine("RETURN: Result.success")
+                return Result.success(
+                    workDataOf(
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
             }
 
+            // 5) with media
             if (srcChatId == 0L || srcMsgId == 0L) {
                 logE("missing src ids")
-            pushLine("RETURN: Result.failure")
-                return Result.failure()
+                pushLine("RETURN: Result.failure")
+                return Result.failure(
+                    workDataOf(
+                        KEY_ERROR_MSG to "missing src ids",
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
             }
 
-            // 1) משוך הודעה מקורית
+            // 6) fetch source message
             val msg = getMessageSync(srcChatId, srcMsgId) ?: run {
                 logE("GetMessage failed")
-            pushLine("RETURN: Result.failure")
-                return Result.failure()
+                pushLine("RETURN: Result.failure")
+                return Result.failure(
+                    workDataOf(
+                        KEY_ERROR_MSG to "GetMessage failed",
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
             }
 
-            // 2) חלץ מדיה
+            // 7) extract media
             val media = extractMedia(msg) ?: run {
-                logE("No media in source message -> fallback to TEXT (but toggle asked media). sending TEXT anyway.")
+                logE("No media in source message -> fallback TEXT")
                 val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) return Result.failure()
-            pushLine("RETURN: Result.success")
-                return Result.success()
+                if (!sendMessage(targetChatId, content)) {
+                    pushLine("RETURN: Result.failure")
+                    return Result.failure(
+                        workDataOf(
+                            KEY_ERROR_MSG to "no media & text send failed",
+                            KEY_LOG_FILE to logFile.absolutePath,
+                            KEY_LOG_TAIL to tail.joinToString("\n")
+                        )
+                    )
+                }
+                pushLine("RETURN: Result.success")
+                return Result.success(
+                    workDataOf(
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
             }
 
-            // 3) הורד קובץ המדיה (TDLib)
+            // 8) download file via TDLib
             val srcFile = downloadFileToLocal(media.fileId, timeoutSec = 90) ?: run {
                 logE("DownloadFile failed (fileId=${media.fileId}) -> fallback TEXT")
                 val content = TdApi.InputMessageText(captionFmt, lpOpts, false)
-                if (!sendMessage(targetChatId, content)) return Result.failure()
-            pushLine("RETURN: Result.success")
-                return Result.success()
+                if (!sendMessage(targetChatId, content)) {
+                    pushLine("RETURN: Result.failure")
+                    return Result.failure(
+                        workDataOf(
+                            KEY_ERROR_MSG to "download failed & text send failed",
+                            KEY_LOG_FILE to logFile.absolutePath,
+                            KEY_LOG_TAIL to tail.joinToString("\n")
+                        )
+                    )
+                }
+                pushLine("RETURN: Result.success")
+                return Result.success(
+                    workDataOf(
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
             }
 
-            // 4) העתק ל-tmp (כדי שלא ניגע בקבצי TDLib)
+            // 9) copy to our tmp
             val inExt = when (media.kind) {
                 Kind.PHOTO -> "jpg"
                 Kind.VIDEO -> "mp4"
                 Kind.ANIMATION -> "mp4"
                 else -> "bin"
             }
-            val inputFile = File(tmpDir, "in_${System.currentTimeMillis()}.$inExt")
+            val inputFile = File(tmpDir, "in_${System.currentTimeMillis()}." + inExt)
             srcFile.copyTo(inputFile, overwrite = true)
 
-            // 5) watermark file (אם יש)
+            // 10) watermark file (if any)
             val wmFile: File? = if (watermarkUriStr.isNotBlank()) {
                 resolveUriToTempFile(Uri.parse(watermarkUriStr), tmpDir, "wm_${System.currentTimeMillis()}.png")
             } else null
 
-            // 6) blur rects
+            // 11) blur rects
             val rects = parseRects(blurRectsStr)
 
             val needEdits = (wmFile != null) || rects.isNotEmpty()
@@ -247,7 +242,7 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
                     Kind.ANIMATION -> "mp4"
                     else -> "bin"
                 }
-                val outFile = File(tmpDir, "out_${System.currentTimeMillis()}.$outExt")
+                val outFile = File(tmpDir, "out_${System.currentTimeMillis()}." + outExt)
                 val ok = runFfmpegEdits(
                     input = inputFile,
                     output = outFile,
@@ -263,7 +258,7 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
                 } else outFile
             }
 
-            // 7) בנה content לפי סוג — לא כקובץ
+            // 12) build TDLib content
             val input = TdApi.InputFileLocal(finalFile.absolutePath)
             val content: TdApi.InputMessageContent = when (media.kind) {
                 Kind.PHOTO -> TdApi.InputMessagePhoto().apply {
@@ -287,62 +282,42 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
 
             val sentOk = sendMessage(targetChatId, content)
             logI("sent media kind=${media.kind} edited=$needEdits final=${finalFile.name} ok=$sentOk")
-            return if (sentOk) Result.success() else Result.failure()
+            pushLine(if (sentOk) "RETURN: Result.success" else "RETURN: Result.failure")
 
+            return if (sentOk) {
+                Result.success(
+                    workDataOf(
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
+            } else {
+                Result.failure(
+                    workDataOf(
+                        KEY_ERROR_MSG to "sendMessage failed",
+                        KEY_LOG_FILE to logFile.absolutePath,
+                        KEY_LOG_TAIL to tail.joinToString("\n")
+                    )
+                )
+            }
         } catch (t: Throwable) {
             logE("crash in SendWorker", t)
-            pushLine("RETURN: Result.failure")
-            return Result.failure()
-        } finally {
-            // ניקוי רק קבצי tmp שלנו (לא תיקיות TDLib)
-            runCatching { cleanupTmp(tmpDir) }
-        }
-    
-        } catch (t: Throwable) {
-            android.util.android.util.Log.e(TAG, "SendWorker crash", t)
             val msg = (t.message ?: t.javaClass.simpleName).take(300)
             pushLine("=== FAILED: $msg ===")
-            pushLine("RETURN: Result.failure")
-            return Result.failure(
-                workDataOf(
-                    KEY_ERROR_MSG to msg,
-                    KEY_LOG_FILE to logFile.absolutePath,
-                    KEY_LOG_TAIL to tail.joinToString("\n")
-                )
-            )
-        }
-
-
-        } catch (t: Throwable) {
-            android.util.android.util.Log.e(TAG, "SendWorker crash", t)
-            val msg = (t.message ?: t.javaClass.simpleName).take(300)
-            try { pushLine("=== FAILED: " + msg + " ===") } catch (_: Throwable) {}
-            try { pushLine(android.util.android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
-            pushLine("RETURN: Result.failure")
-            return Result.failure(
-                androidx.work.workDataOf(
-                    KEY_ERROR_MSG to msg,
-                    KEY_LOG_FILE to logFile.absolutePath,
-                    KEY_LOG_TAIL to tail.joinToString("\n")
-                )
-            )
-        }
-
-            pushLine("=== SendWorker finished ===")
-            return Result.success(workDataOf(KEY_LOG_FILE to logFile.absolutePath))
-        } catch (t: Throwable) {
-            pushLine("FAILED: " + (t.message ?: t.javaClass.simpleName))
             pushLine(android.util.Log.getStackTraceString(t))
+            pushLine("RETURN: Result.failure")
             return Result.failure(
                 workDataOf(
-                    KEY_ERROR_MSG to (t.message ?: "send failed"),
+                    KEY_ERROR_MSG to msg,
                     KEY_LOG_FILE to logFile.absolutePath,
                     KEY_LOG_TAIL to tail.joinToString("\n")
                 )
             )
+        } finally {
+            runCatching { cleanupTmp(tmpDir) }
+            pushLine("=== SendWorker finished ===")
         }
-
-
+    }
     private fun cleanupTmp(tmpDir: File) {
         val files = tmpDir.listFiles() ?: return
         var n = 0
@@ -419,8 +394,6 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
         if (!latch.await(25, TimeUnit.SECONDS)) return null
         return msg
     }
-
-    private data class MediaInfo(val kind: Kind, val fileId: Int)
 
     private fun extractMedia(msg: TdApi.Message): MediaInfo? {
         val c = msg.content ?: return null
@@ -509,7 +482,7 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
         // base
         filters += "[0:v]format=rgba[$cur]"
 
-        // blur rectangles (crop uses iw/ih which כן תקין שם)
+        // blur rectangles (crop uses iw/ih)
         rects.forEachIndexed { i, r ->
             val base = "base$i"
             val tmp = "tmp$i"
@@ -574,10 +547,6 @@ pushLine("INPUT: " + inputData.keyValueMap.toString())
         val session = FFmpegKit.execute(cmd)
         val rc = session.returnCode
         val ok = ReturnCode.isSuccess(rc)
-        if (!ok) {
-            logE("FFmpeg failed rc=$rc")
-            throw RuntimeException("FFmpeg failed rc=$rc")
-        }
         if (!ok) {
             logE("FFmpeg failed rc=$rc")
             logE("FFmpeg logs:\n" + session.allLogsAsString)
