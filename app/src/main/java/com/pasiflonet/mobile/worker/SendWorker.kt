@@ -21,7 +21,13 @@ import kotlin.math.max
 
 class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appContext, params) {
 
-    companion object {
+    
+    private fun safeTail(x: String, max: Int = 3500): String {
+        if (x.length <= max) return x
+        return x.takeLast(max)
+    }
+
+companion object {
         const val KEY_LOG_TAIL = "log_tail"
         const val KEY_ERROR_MSG = "error_msg"
         const val KEY_LOG_FILE = "log_file"
