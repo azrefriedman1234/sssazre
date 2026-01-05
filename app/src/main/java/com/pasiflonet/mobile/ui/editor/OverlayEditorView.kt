@@ -63,7 +63,7 @@ private val blurPaint = Paint().apply {
     data class OverlayState(
         val wmX: Float,
         val wmY: Float,
-        val blurNRects: List<NRect>
+        val blurRects: List<NRect>
     )
 
     // normalized
@@ -76,7 +76,7 @@ private val blurPaint = Paint().apply {
     private val dst = RectF()
 
     // blur rects normalized
-    private val blurNRects: MutableList<NRect> = mutableListOf()
+    private val blurRects: MutableList<NRect> = mutableListOf()
 
     // interaction
     private enum class Mode { NONE, DRAG_WM, DRAW_BLUR }
@@ -130,13 +130,13 @@ private val blurPaint = Paint().apply {
     }
 
     fun clearBlurRects() {
-        blurNRects.clear()
+        blurRects.clear()
         curRect = null
         invalidate()
     }
 
     fun setBlurRectsNorm(list: List<NRect>) {
-        blurNRects.clear()
+        blurRects.clear()
         blurRects.addAll(list.map { it.norm() })
         invalidate()
     }
@@ -169,13 +169,13 @@ super.onDraw(canvas)
         dst.set(0f, 0f, width.toFloat(), height.toFloat())
 
         // 1) draw blur previews (existing)
-        for (nr in blurNRects) {
+        for (nr in blurRects) {
             val r = nr.norm()
             val rc = RectF(
-                dst.left + r.l * dst.width(),
-                dst.top + r.t * dst.height(),
-                dst.left + r.r * dst.width(),
-                dst.top + r.b * dst.height()
+                dst.l + r.l * dst.width(),
+                dst.t + r.t * dst.height(),
+                dst.l + r.r * dst.width(),
+                dst.t + r.b * dst.height()
             )
             canvas.drawRect(rc, blurFill)
             canvas.drawRect(rc, blurStroke)
@@ -185,10 +185,10 @@ super.onDraw(canvas)
         curRect?.let { rc ->
             val n = rectPxToNorm(rc).norm()
             val px = RectF(
-                dst.left + n.l * dst.width(),
-                dst.top + n.t * dst.height(),
-                dst.left + n.r * dst.width(),
-                dst.top + n.b * dst.height()
+                dst.l + n.l * dst.width(),
+                dst.t + n.t * dst.height(),
+                dst.l + n.r * dst.width(),
+                dst.t + n.b * dst.height()
             )
             canvas.drawRect(px, blurFill)
             canvas.drawRect(px, blurStroke)
@@ -199,8 +199,8 @@ super.onDraw(canvas)
                   val targetW = dst.width() * 0.12f
                   val scale = targetW / max(1f, wm.width.toFloat())
                   val targetH = wm.height.toFloat() * scale
-                  val x = dst.left + wmX * (dst.width() - targetW)
-                  val y = dst.top + wmY * (dst.height() - targetH)
+                  val x = dst.l + wmX * (dst.width() - targetW)
+                  val y = dst.t + wmY * (dst.height() - targetH)
                   val rc = RectF(x, y, x + targetW, y + targetH)
                   canvas.drawBitmap(wm, null, rc, wmPaint)
           }
@@ -221,7 +221,7 @@ super.onDraw(canvas)
         try {
             val w = width.toFloat().coerceAtLeast(1f)
             val h = height.toFloat().coerceAtLeast(1f)
-            for (r in blurNRects) {
+            for (r in blurRects) {
                 val left = (r.l.coerceIn(0f,1f) * w)
                 val top = (r.t.coerceIn(0f,1f) * h)
                 val right = (r.r.coerceIn(0f,1f) * w)
@@ -244,8 +244,8 @@ super.onDraw(canvas)
                 val hit = hitTestWatermark(x, y)
                 if (hit != null) {
                     mode = Mode.DRAG_WM
-                    wmHitOffsetX = x - hit.left
-                    wmHitOffsetY = y - hit.top
+                    wmHitOffsetX = x - hit.l
+                    wmHitOffsetY = y - hit.t
                     parent?.requestDisallowInterceptTouchEvent(true)
                     return true
                 }
@@ -265,8 +265,8 @@ super.onDraw(canvas)
                         val scale = targetW / max(1f, wm.width.toFloat())
                         val targetH = wm.height.toFloat() * scale
 
-                        val nx = ((x - wmHitOffsetX - dst.left) / max(1f, (dst.width() - targetW))).coerceIn(0f, 1f)
-                        val ny = ((y - wmHitOffsetY - dst.top) / max(1f, (dst.height() - targetH))).coerceIn(0f, 1f)
+                        val nx = ((x - wmHitOffsetX - dst.l) / max(1f, (dst.width() - targetW))).coerceIn(0f, 1f)
+                        val ny = ((y - wmHitOffsetY - dst.t) / max(1f, (dst.height() - targetH))).coerceIn(0f, 1f)
                         wmX = nx
                         wmY = ny
                         invalidate()
@@ -276,8 +276,8 @@ super.onDraw(canvas)
 
                 if (mode == Mode.DRAW_BLUR) {
                     curRect?.let {
-                        it.right = x
-                        it.bottom = y
+                        it.r = x
+                        it.b = y
                         invalidate()
                     }
                     return true
@@ -293,7 +293,7 @@ super.onDraw(canvas)
                 if (rc != null) {
                     val n = rectPxToNorm(rc).norm()
                     if (n.r > n.l && n.b > n.t) {
-                        blurNRects.add(n)
+                        blurRects.add(n)
                         invalidate()
                     }
                 }
@@ -304,9 +304,9 @@ super.onDraw(canvas)
 
                     if (r != null) {
                         // ignore tiny drags
-                        if (abs(r.right - r.left) > 12f && abs(r.bottom - r.top) > 12f) {
+                        if (abs(r.r - r.l) > 12f && abs(r.b - r.t) > 12f) {
                             val n = rectPxToNorm(r).norm()
-                            blurNRects.add(n)
+                            blurRects.add(n)
                         }
                     }
                     invalidate()
@@ -332,8 +332,8 @@ super.onDraw(canvas)
         val scale = targetW / max(1f, wm.width.toFloat())
         val targetH = wm.height.toFloat() * scale
 
-        val px = dst.left + wmX * (dst.width() - targetW)
-        val py = dst.top + wmY * (dst.height() - targetH)
+        val px = dst.l + wmX * (dst.width() - targetW)
+        val py = dst.t + wmY * (dst.height() - targetH)
         val rc = RectF(px, py, px + targetW, py + targetH)
 
         return if (rc.contains(x, y)) rc else null
@@ -341,10 +341,10 @@ super.onDraw(canvas)
 
     private fun rectPxToNorm(px: RectF): NRect {
         dst.set(0f, 0f, width.toFloat(), height.toFloat())
-        val l = ((min(px.left, px.right) - dst.left) / max(1f, dst.width())).coerceIn(0f, 1f)
-        val r = ((max(px.left, px.right) - dst.left) / max(1f, dst.width())).coerceIn(0f, 1f)
-        val t = ((min(px.top, px.bottom) - dst.top) / max(1f, dst.height())).coerceIn(0f, 1f)
-        val b = ((max(px.top, px.bottom) - dst.top) / max(1f, dst.height())).coerceIn(0f, 1f)
+        val l = ((min(px.l, px.r) - dst.l) / max(1f, dst.width())).coerceIn(0f, 1f)
+        val r = ((max(px.l, px.r) - dst.l) / max(1f, dst.width())).coerceIn(0f, 1f)
+        val t = ((min(px.t, px.b) - dst.t) / max(1f, dst.height())).coerceIn(0f, 1f)
+        val b = ((max(px.t, px.b) - dst.t) / max(1f, dst.height())).coerceIn(0f, 1f)
         return NRect(l, t, r, b)
     }
 
@@ -470,11 +470,11 @@ super.onDraw(canvas)
 
 
     private fun drawBlurRects(canvas: android.graphics.Canvas) {
-        if (blurNRects.isEmpty()) return
+        if (blurRects.isEmpty()) return
         val w = width.toFloat().coerceAtLeast(1f)
         val h = height.toFloat().coerceAtLeast(1f)
-        for (r in blurNRects) {
-            val rr = RectF(r.left*w, r.top*h, r.right*w, r.bottom*h)
+        for (r in blurRects) {
+            val rr = RectF(r.l*w, r.t*h, r.r*w, r.b*h)
             canvas.drawRect(rr, blurPaint)
         }
     }
