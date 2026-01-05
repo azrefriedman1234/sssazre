@@ -49,10 +49,12 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
         val m = (mime ?: "").lowercase().trim()
         val ext = (path ?: "").lowercase()
         return when {
-            m.startswith("video/") || ext.endswith(".mp4") || ext.endswith(".mov") || ext.endswith(".mkv") -> Kind.VIDEO
-            m.startswith("image/") || ext.endswith(".jpg") || ext.endswith(".jpeg") || ext.endswith(".png") || ext.endswith(".webp") -> Kind.PHOTO
+            m.startsWith("video/") || ext.endsWith(".mp4") || ext.endsWith(".mov") || ext.endsWith(".mkv") -> Kind.VIDEO
+            m.startsWith("image/") || ext.endsWith(".jpg") || ext.endsWith(".jpeg") || ext.endsWith(".png") || ext.endsWith(".webp") -> Kind.PHOTO
             else -> Kind.DOCUMENT
         }
+    }
+
     }
 
     private fun uriToTempCopy(uri: Uri, tmpDir: File, name: String): File? {
@@ -558,22 +560,26 @@ val hasWm = wmFile != null
 
     val outLabel = if (hasWm) "outv" else cur
 
-    // watermark: scale to ~18% of MAIN video width (not watermark width)
-    if (hasWm) {
-              val nx = wmX.coerceIn(0f, 1f)
-              val ny = wmY.coerceIn(0f, 1f)
 
-              // scale watermark relative to main video/image width (~18%)
-              val xExpr = "(%s*(main_w-overlay_w))" % nx
-              val yExpr = "(%s*(main_h-overlay_h))" % ny
+        // watermark (if any) - scaled to ~18% of main width
+        if (hasWm) {
+            val nx = wmX.coerceIn(0f, 1f)
+            val ny = wmY.coerceIn(0f, 1f)
 
-              val wm0 = "wm0"
-              val vwm = "vwm"
-              // Important: watermark first, reference second
-              filters += "[1:v]format=rgba[%s]" % wm0
-              filters += "[%s][%s]scale2ref=w=main_w*0.18:h=-1[wm][%s]" % (wm0, cur, vwm)
-              filters += "[%s][wm]overlay=%s:%s:format=auto[%s]" % (vwm, xExpr, yExpr, outLabel)
-          }
+            // overlay position in pixels (0..main_w-overlay_w)
+            val xExpr = "(${nx}*(main_w-overlay_w))"
+            val yExpr = "(${ny}*(main_h-overlay_h))"
+
+            val wm0 = "wm0"
+            val vwm = "vwm"
+
+            // Watermark first, reference(second) = current video
+            filters += "[1:v]format=rgba[$wm0]"
+            filters += "[$wm0][$cur]scale2ref=w=main_w*0.18:h=-1[wm][$vwm]"
+            filters += "[$vwm][wm]overlay=$xExpr:$yExpr:format=auto[$outLabel]"
+        }
+
+
 
           val fc = filters.joinToString(";")
 
