@@ -435,23 +435,31 @@ setContentView(R.layout.activity_details)
             }
     }
     // === SEND_LOG_UI_END ===
-    private fun pasTranslateAsync(src: String) {
-        Thread {
+        private fun pasTranslateAsync(src: String) {
+        if (src.isBlank()) return
+        kotlin.concurrent.thread(start = true) {
             try {
-                val translated = com.pasiflonet.mobile.util.OnDeviceTranslate.com.pasiflonet.mobile.util.OnDeviceTranslate.translateToHebrewBlocking(applicationContext, src)
+                val translated =
+                    com.pasiflonet.mobile.util.OnDeviceTranslate.translateToHebrewBlocking(applicationContext, src)
+                        ?: ""
                 runOnUiThread {
                     val i = android.content.Intent(this, com.pasiflonet.mobile.ui.TranslateActivity::class.java)
                         .putExtra(com.pasiflonet.mobile.ui.TranslateActivity.EXTRA_SOURCE_TEXT, src)
-                        .putExtra(com.pasiflonet.mobile.ui.TranslateActivity.EXTRA_TRANSLATED_TEXT, translated ?: "")
+                        .putExtra(com.pasiflonet.mobile.ui.TranslateActivity.EXTRA_TRANSLATED_TEXT, translated)
                     translateLauncher.launch(i)
                 }
             } catch (t: Throwable) {
                 runOnUiThread {
-                    android.widget.Toast.makeText(this, "Offline translate failed: " + (t.message ?: ""), android.widget.Toast.LENGTH_LONG).show()
+                    android.widget.Toast.makeText(
+                        this,
+                        "Offline translate failed: " + (t.message ?: ""),
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
             }
-        }.start()
+        }
     }
+
 
     // RESOLVE_INITIAL_MEDIA_URI_BEGIN
     private fun resolveInitialMediaUri(): Uri? {
