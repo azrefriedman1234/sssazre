@@ -1,5 +1,6 @@
 package com.pasiflonet.mobile.ui
 
+import com.pasiflonet.mobile.R
 import android.content.Intent
 import android.os.Bundle
 import android.view.View

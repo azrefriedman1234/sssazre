@@ -1,6 +1,4 @@
 package com.pasiflonet.mobile.ui
-import com.pasiflonet.mobile.util.OnDeviceTranslate
-
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -440,7 +438,7 @@ setContentView(R.layout.activity_details)
     private fun pasTranslateAsync(src: String) {
         Thread {
             try {
-                val translated = OnDeviceTranslate.OnDeviceTranslate.translateToHebrewBlocking(applicationContext, src)
+                val translated = com.pasiflonet.mobile.util.OnDeviceTranslate.com.pasiflonet.mobile.util.OnDeviceTranslate.translateToHebrewBlocking(applicationContext, src)
                 runOnUiThread {
                     val i = android.content.Intent(this, com.pasiflonet.mobile.ui.TranslateActivity::class.java)
                         .putExtra(com.pasiflonet.mobile.ui.TranslateActivity.EXTRA_SOURCE_TEXT, src)
