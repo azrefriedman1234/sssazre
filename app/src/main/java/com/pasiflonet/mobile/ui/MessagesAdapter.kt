@@ -20,37 +20,35 @@ class MessagesAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(android.R.layout.simple_list_item_2, parent, false)
+        val v = LayoutInflater.from(parent.context)
+            .inflate(android.R.layout.simple_list_item_2, parent, false)
         return VH(v)
+    }
+
+    override fun onBindViewHolder(holder: VH, position: Int) {
+        val m = items[position]
+        holder.bind(m, onClick)
     }
 
     override fun getItemCount(): Int = items.size
 
-    override fun onBindViewHolder(holder: VH, position: Int) {
-        val m = items[position]
-        holder.title.text = "chat=${m.chatId}  id=${m.id}"
-        holder.sub.text = extractText(m)
-        holder.itemView.setOnClickListener { onClick(m) }
-    }
-
     class VH(v: View) : RecyclerView.ViewHolder(v) {
-        val title: TextView = v.findViewById(android.R.id.text1)
-        val sub: TextView = v.findViewById(android.R.id.text2)
-    }
+        private val t1: TextView = v.findViewById(android.R.id.text1)
+        private val t2: TextView = v.findViewById(android.R.id.text2)
 
-    private fun extractText(m: TdApi.Message): String {
-        return try {
-            when (val c = m.content) {
-                is TdApi.MessageText -> c.text.text
-                is TdApi.MessagePhoto -> "[PHOTO]"
-                is TdApi.MessageVideo -> "[VIDEO]"
-                is TdApi.MessageDocument -> "[DOC]"
-                is TdApi.MessageAnimation -> "[GIF]"
-                is TdApi.MessageSticker -> "[STICKER]"
-                else -> "[" + (c?.javaClass?.simpleName ?: "CONTENT") + "]"
+        fun bind(msg: TdApi.Message, onClick: (TdApi.Message) -> Unit) {
+            t1.text = "chat=${msg.chatId}  id=${msg.id}"
+            t2.text = extractText(msg)
+            itemView.setOnClickListener { onClick(msg) }
+        }
+
+        private fun extractText(msg: TdApi.Message): String {
+            val c = msg.content ?: return ""
+            return when (c) {
+                is TdApi.MessageText -> c.text?.text ?: ""
+                is TdApi.MessageCaption -> c.caption?.text ?: ""
+                else -> c.javaClass.simpleName
             }
-        } catch (_: Throwable) {
-            "[MSG]"
         }
     }
 }

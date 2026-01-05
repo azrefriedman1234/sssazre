@@ -11,6 +11,17 @@ import org.drinkless.tdlib.TdApi
 import java.util.concurrent.CopyOnWriteArrayList
 
 object TdLibManager {
+    // --- UPDATES LISTENERS (UI LIVE) ---
+    private val updateListeners = java.util.concurrent.CopyOnWriteArrayList<(org.drinkless.tdlib.TdApi.Object) -> Unit>()
+
+    fun addUpdatesHandler(cb: (org.drinkless.tdlib.TdApi.Object) -> Unit) {
+        updateListeners.add(cb)
+    }
+
+    fun removeUpdatesHandler(cb: (org.drinkless.tdlib.TdApi.Object) -> Unit) {
+        updateListeners.remove(cb)
+    }
+
     private val _updates = MutableSharedFlow<org.drinkless.tdlib.TdApi.Object>(extraBufferCapacity = 256)
     val updates = _updates.asSharedFlow()
     private val _authState = MutableStateFlow<org.drinkless.tdlib.TdApi.AuthorizationState?>(null)
@@ -34,6 +45,9 @@ object TdLibManager {
         } catch (_: Throwable) {}
 
         val updatesHandler = Client.ResultHandler { obj ->
+            // fan-out to UI listeners (never crash TDLib thread)
+            try { updateListeners.forEach { it(obj) } } catch (_: Throwable) {}
+
         _updates.tryEmit(obj)
         if (obj is org.drinkless.tdlib.TdApi.UpdateAuthorizationState) _authState.value = obj.authorizationState
 
