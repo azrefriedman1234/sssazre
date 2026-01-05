@@ -464,7 +464,7 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
         return ok
     }
 
-    private fun runFfmpegEdits(
+        private fun runFfmpegEdits(
         input: File,
         output: File,
         kind: Kind,
@@ -474,74 +474,65 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
         wmY: Float
     ): Boolean {
         val hasWm = wmFile != null
-        val hasBlur = rects.isNotEmpty()
 
         val filters = mutableListOf<String>()
         var cur = "v0"
 
-        // בסיס – תמיד rgba כדי ש-boxblur/overlay יעבדו טוב
+        // base: always go to rgba
         filters += "[0:v]format=rgba[$cur]"
 
-        // blur rectangles (crop משתמש ב-iw/ih – שם זה תקין)
+        // blur rectangles
         rects.forEachIndexed { i, r ->
-            val base = "base\$i"
-            val tmp = "tmp\$i"
-            val bl = "bl\$i"
-            val out = "v\${i + 1}"
+            val base = "base$i"
+            val tmp = "tmp$i"
+            val bl = "bl$i"
+            val out = "v${i + 1}"
 
-            val xCrop = "max(0,\${r.l}*iw)"
-            val yCrop = "max(0,\${r.t}*ih)"
-            val wCrop = "max(1,(\${r.r}-\${r.l})*iw)"
-            val hCrop = "max(1,(\${r.b}-\${r.t})*ih)"
-            val xOv = "max(0,\${r.l}*main_w)"
-            val yOv = "max(0,\${r.t}*main_h)"
+            val xCrop = "max(0,${r.l}*iw)"
+            val yCrop = "max(0,${r.t}*ih)"
+            val wCrop = "max(1,(${r.r}-${r.l})*iw)"
+            val hCrop = "max(1,(${r.b}-${r.t})*ih)"
+            val xOv = "max(0,${r.l}*main_w)"
+            val yOv = "max(0,${r.t}*main_h)"
 
             filters += "[$cur]split=2[$base][$tmp]"
-            filters += "[$tmp]crop=w=\$wCrop:h=\$hCrop:x=\$xCrop:y=\$yCrop,boxblur=10:1[$bl]"
-            filters += "[$base][$bl]overlay=x=\$xOv:y=\$yOv[$out]"
+            filters += "[$tmp]crop=w=$wCrop:h=$hCrop:x=$xCrop:y=$yCrop,boxblur=10:1[$bl]"
+            filters += "[$base][$bl]overlay=x=$xOv:y=$yOv[$out]"
             cur = out
         }
 
-        // label סופי של וידאו אחרי blur
         val outLabel = if (hasWm) "outv" else cur
 
-        // watermark (אם יש)
-        if (hasWm) {
-            // מיקומי watermark מנורמלים 0..1
-            val nx = wmX.coerceIn(0f, 1f)
-            val ny = wmY.coerceIn(0f, 1f)
-
-            // watermark נע בטווח 0..(main_w-overlay_w)
-            val xExpr = "(\$nx*(main_w-overlay_w))"
-            val yExpr = "(\$ny*(main_h-overlay_h))"
+        // watermark overlay (if exists)
+        if (hasWm && wmFile != null) {
+            val xExpr = "(${wmX.coerceIn(0f, 1f)}*(main_w-overlay_w))"
+            val yExpr = "(${wmY.coerceIn(0f, 1f)}*(main_h-overlay_h))"
 
             val vScaled = "vwm"
-            // scale2ref פשוט: נקטין את הלוגו ל-~18% מרוחב הווידאו
+            // scale watermark relative to current video
             filters += "[$cur][1:v]scale2ref=w=iw*0.18:h=-1[$vScaled][wm]"
-            // overlay עם x,y פשוטים (בלי x= / y= ובלי max/min – יותר יציב)
-            filters += "[$vScaled][wm]overlay=\$xExpr:\$yExpr[$outLabel]"
+            // simple overlay using xExpr/yExpr
+            filters += "[$vScaled][wm]overlay=$xExpr:$yExpr[$outLabel]"
         }
 
         val fc = filters.joinToString(";")
+
         val args = mutableListOf<String>()
         args += "-y"
         args += "-i"; args += input.absolutePath
-        if (hasWm) {
-            args += "-i"; args += wmFile!!.absolutePath
+        if (hasWm && wmFile != null) {
+            args += "-i"; args += wmFile.absolutePath
         }
         args += "-filter_complex"; args += fc
-
-        // וידאו מהשרשרת המסוננת
         args += "-map"; args += "[$outLabel]"
 
         when (kind) {
             Kind.PHOTO -> {
-                // תמונה – רק איכות טובה
                 args += "-q:v"; args += "2"
                 args += output.absolutePath
             }
             Kind.VIDEO, Kind.ANIMATION -> {
-                // וידאו/אנימציה – שמירת אודיו אם קיים
+                // keep audio if present
                 args += "-map"; args += "0:a?"
                 args += "-c:v"; args += "libx264"
                 args += "-preset"; args += "veryfast"
@@ -551,25 +542,25 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
                 args += output.absolutePath
             }
             else -> {
-                // fallback – מסמך/קובץ אחר
                 args += output.absolutePath
             }
         }
 
         val cmd = args.joinToString(" ")
-        logI("FFmpeg cmd: \$cmd")
+        logI("FFmpeg cmd: $cmd")
 
         val session = FFmpegKit.execute(cmd)
         val rc = session.returnCode
         val ok = ReturnCode.isSuccess(rc)
 
         if (!ok) {
-            logE("FFmpeg failed rc=\$rc")
-            logE("FFmpeg logs:
-" + session.allLogsAsString)
+            logE("FFmpeg failed rc=$rc")
+            logE("FFmpeg logs:\n" + session.allLogsAsString)
         } else {
-            logI("FFmpeg OK -> \${output.name} size=\${output.length()}")
+            logI("FFmpeg OK -> ${output.name} size=${output.length()}")
         }
+
         return ok && output.exists() && output.length() > 0
     }
+
 }
