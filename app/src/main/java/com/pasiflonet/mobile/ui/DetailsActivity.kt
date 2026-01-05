@@ -113,7 +113,6 @@ class DetailsActivity : AppCompatActivity() {
                     val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
                     val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
                     val msg = "Send failed (see logs above)"
-                    showOrUpdateLogDialog(msg)
                     android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
@@ -144,7 +143,7 @@ setContentView(R.layout.activity_details)
         swSendWithMedia.visibility = View.VISIBLE
         swSendWithMedia.isEnabled = false
         swSendWithMedia.isChecked = false
-        swSendWithMedia.text = "בודק מדיה..."
+        swSendWithMedia.text = "בודק מדיה.."
 
         // תצוגת בסיס מהירה (miniThumb), ואז Thumb חד מהטלגרם
         decodeMiniThumb(miniThumbB64)?.let { ivPreview.setImageBitmap(it) }
@@ -371,7 +370,6 @@ setContentView(R.layout.activity_details)
                 if (info.state == androidx.work.WorkInfo.State.FAILED) {
                     val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
                     val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
-                    showOrUpdateLogDialog("ERROR: ${err}\n\n${tail}\n\nLOG FILE: ${logFile}")
                     android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
@@ -391,3 +389,4 @@ setContentView(R.layout.activity_details)
 
 
     }
+// (auto) trimmed invalid tail after DetailsActivity class end
