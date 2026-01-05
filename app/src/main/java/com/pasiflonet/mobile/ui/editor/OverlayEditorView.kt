@@ -20,6 +20,15 @@ class OverlayEditorView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
+    // PAS_FORCE_DRAW_BEGIN
+    init {
+        // Force drawing even if this is a ViewGroup
+        try { setWillNotDraw(false) } catch (_: Throwable) {}
+        try { invalidate() } catch (_: Throwable) {}
+    }
+    // PAS_FORCE_DRAW_END
+
+
     data class NRect(val l: Float, val t: Float, val r: Float, val b: Float) {
         fun norm(): NRect {
             val ll = min(l, r).coerceIn(0f, 1f)

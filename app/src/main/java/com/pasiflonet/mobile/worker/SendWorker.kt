@@ -16,6 +16,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
+import com.arthenica.ffmpegkit.Config
 
 class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appContext, params) {
 
@@ -70,7 +71,40 @@ class SendWorker(appContext: Context, params: WorkerParameters) : Worker(appCont
 
         try {
             pushLine("=== SendWorker started ===")
-            pushLine("INPUT: " + inputData.keyValueMap.toString())
+            
+            // PAS_FFMPEG_LOG_BRIDGE_BEGIN
+            // Bridge FFmpegKit logs -> pushLine (so UI/progress/file see them)
+            try {
+                Config.enableLogCallback { log ->
+                    try {
+                        val msg = log?.message ?: return@enableLogCallback
+                        // keep it short
+                        pushLine("FF: " + msg.take(500))
+                    } catch (_: Throwable) {}
+                }
+            } catch (t: Throwable) {
+                pushLine("WARN: cannot enable FFmpeg log callback: " + (t.message ?: t.javaClass.simpleName))
+            }
+            // PAS_FFMPEG_LOG_BRIDGE_END
+
+        // PAS_RUN_FFMPEG_BLOCKING_BEGIN
+        fun runFfmpegBlocking(cmd: String): Boolean {
+            pushLine("FFMPEG CMD: " + cmd)
+            val session = FFmpegKit.execute(cmd)
+            val rc = session.returnCode
+            val failStack = runCatching { session.failStackTrace }.getOrNull()
+            val out = runCatching { session.allLogsAsString }.getOrNull()
+
+            pushLine("FFMPEG RC: " + (rc?.toString() ?: "null"))
+            if (out != null && out.isNotBlank()) {
+                for (ln in out.lines().takeLast(200)) pushLine("FF: " + ln.take(500))
+            }
+            if (failStack != null && failStack.isNotBlank()) pushLine("FFMPEG FAIL: " + failStack.take(800))
+
+            return rc != null && ReturnCode.isSuccess(rc)
+        }
+        // PAS_RUN_FFMPEG_BLOCKING_END
+pushLine("INPUT: " + inputData.keyValueMap.toString())
             pushLine("Thread=" + Thread.currentThread().name)
 
 
