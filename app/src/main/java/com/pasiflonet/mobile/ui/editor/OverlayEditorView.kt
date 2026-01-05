@@ -168,28 +168,19 @@ class OverlayEditorView @JvmOverloads constructor(
             )
             canvas.drawRect(px, blurFill)
             canvas.drawRect(px, blurStroke)
-        }
-
-        // 3) draw watermark
-        val wm = watermarkBitmap ?: return
-        // watermark size relative to view
-        val targetW = dst.width() * 0.12f
-        val scale = targetW / max(1f, wm.width.toFloat())
-        val targetH = wm.height.toFloat() * scale
-
-        val x = dst.left + wmX * (dst.width() - targetW)
-        val y = dst.top + wmY * (dst.height() - targetH)
-
-        val rc = RectF(x, y, x + targetW, y + targetH)
-        canvas.drawBitmap(wm, null, rc, wmPaint)
-        canvas.drawRect(rc, hudStroke)
-    
-
-
-
-
-
-        
+        }          // 3) draw watermark
+          watermarkBitmap?.let { wm ->
+                  val wm = watermarkBitmap
+                  // watermark size relative to view
+                  val targetW = dst.width() * 0.12f
+                  val scale = targetW / max(1f, wm.width.toFloat())
+                  val targetH = wm.height.toFloat() * scale
+                  val x = dst.left + wmX * (dst.width() - targetW)
+                  val y = dst.top + wmY * (dst.height() - targetH)
+                  val rc = RectF(x, y, x + targetW, y + targetH)
+                  canvas.drawBitmap(wm, null, rc, wmPaint)
+          }
+          // end watermark
 // (auto) removed broken debug block
 
 
