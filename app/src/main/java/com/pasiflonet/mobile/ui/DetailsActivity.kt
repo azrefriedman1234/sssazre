@@ -330,6 +330,28 @@ class DetailsActivity : AppCompatActivity() {
 
         WorkManager.getInstance(applicationContext).enqueue(req)
 
+        // Live logs from SendWorker (progress/outputData)
+        androidx.work.WorkManager.getInstance(this)
+            .getWorkInfoByIdLiveData(req.id)
+            .observe(this) { info ->
+                if (info == null) return@observe
+
+                val tail =
+                    info.progress.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
+                        ?: info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_TAIL)
+                        ?: ""
+
+                if (tail.isNotBlank()) showOrUpdateLogDialog(tail)
+
+                if (info.state == androidx.work.WorkInfo.State.FAILED) {
+                    val err = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_ERROR_MSG) ?: "Send failed"
+                    val logFile = info.outputData.getString(com.pasiflonet.mobile.worker.SendWorker.KEY_LOG_FILE) ?: ""
+                    showOrUpdateLogDialog("ERROR: ${err}\n\n${tail}\n\nLOG FILE: ${logFile}")
+                    android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+
+
         Toast.makeText(
             this,
             if (sendWithMedia) "✅ נשלח עם מדיה + טקסט (מוריד מהטלגרם ומעריך)" else "✅ נשלח טקסט בלבד",
@@ -338,4 +360,26 @@ class DetailsActivity : AppCompatActivity() {
 
         finish() // חוזר לטבלה
     }
+    private var logDialog: androidx.appcompat.app.AlertDialog? = null
+    private var logTextView: android.widget.TextView? = null
+
+    private fun showOrUpdateLogDialog(text: String) {
+        if (logDialog == null) {
+            val tv = android.widget.TextView(this).apply {
+                setPadding(32, 24, 32, 24)
+                setTextIsSelectable(true)
+                typeface = android.graphics.Typeface.MONOSPACE
+            }
+            val scroll = android.widget.ScrollView(this).apply { addView(tv) }
+            logTextView = tv
+            logDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("FFmpeg / Send logs")
+                .setView(scroll)
+                .setPositiveButton("Close") { d, _ -> d.dismiss() }
+                .create()
+            logDialog!!.show()
+        }
+        logTextView?.text = text
+    }
+
 }
