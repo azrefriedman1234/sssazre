@@ -380,7 +380,9 @@ class OverlayEditorView @JvmOverloads constructor(
                 invalidate()
                 return true
             }
+            else -> {}
         }
+
 
         return super.onTouchEvent(e)
     }
