@@ -477,4 +477,33 @@ setContentView(R.layout.activity_details)
             }
         }.start()
     }
+
+    // --- INIT MEDIA URI FROM INTENT ---
+    private fun resolveInitialMediaUri(): Uri? {
+        return try {
+            // preferred explicit extra
+            val u1 = intent?.getParcelableExtra<Uri>("media_uri")
+            if (u1 != null) return u1
+
+            // fallback: string extra
+            val s1 = intent?.getStringExtra("media_uri")?.trim().orEmpty()
+            if (s1.isNotEmpty()) return Uri.parse(s1)
+
+            // fallback: ACTION_SEND / GET_CONTENT
+            val u2 = intent?.data
+            if (u2 != null) return u2
+
+            // fallback: clipData first item
+            val cd = intent?.clipData
+            if (cd != null && cd.itemCount > 0) {
+                val u3 = cd.getItemAt(0)?.uri
+                if (u3 != null) return u3
+            }
+
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
 }
