@@ -81,7 +81,7 @@ class DetailsActivity : AppCompatActivity() {
     }
 
 
-    }
+     
 
     private lateinit var ivPreview: ImageView
     private lateinit var ivWatermarkOverlay: ImageView
@@ -477,3 +477,4 @@ setContentView(R.layout.activity_details)
             }
         }.start()
     }
+}
