@@ -19,12 +19,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: MessagesAdapter
     private val liveMsgs = ArrayList<TdApi.Message>(200)
 
-    private val updatesCb: (TdApi.Object) -> Unit = { obj ->
-        if (obj is TdApi.UpdateNewMessage) {
-            val m = obj.message ?: return@let
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -47,12 +41,11 @@ class MainActivity : AppCompatActivity() {
 
         hookButtons()
 
-        // start live updates
+        // לייב הודעות מה-TDLib
         TdLibManager.addUpdatesHandler { obj ->
             if (obj is TdApi.UpdateNewMessage) {
                 val msg = obj.message ?: return@addUpdatesHandler
                 runOnUiThread {
-                    // push to top, cap 120
                     liveMsgs.add(0, msg)
                     while (liveMsgs.size > 120) liveMsgs.removeAt(liveMsgs.size - 1)
                     adapter.submit(liveMsgs)
@@ -62,7 +55,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hookButtons() {
-        // Settings
+        // כפתור הגדרות
         findButtonByIdOrName("btn_settings", "btnSettings")?.setOnClickListener {
             try {
                 startActivity(Intent(this, SettingsActivity::class.java))
@@ -71,12 +64,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Exit/Close
+        // כפתור יציאה/סגירה
         findButtonByIdOrName("btn_exit", "btnExit", "btn_close", "btnClose")?.setOnClickListener {
             finishAffinity()
         }
 
-        // Clear temp
+        // כפתור ניקוי קבצים זמניים (רק cacheDir/pasiflonet_tmp)
         findButtonByIdOrName("btn_clear_temp", "btnClearTemp")?.setOnClickListener {
             val n = TempCleaner.clearTemp(this)
             Toast.makeText(this, "נמחקו $n קבצים זמניים", Toast.LENGTH_SHORT).show()
@@ -91,7 +84,7 @@ class MainActivity : AppCompatActivity() {
                 if (v is Button) return v
             }
         }
-        // fallback: first Button in view tree (last resort)
+        // fallback: הכפתור הראשון שנמצא בעץ – רק אם לא מצאנו ID
         return findFirstButton(window.decorView)
     }
 

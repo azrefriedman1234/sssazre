@@ -44,10 +44,10 @@ class MessagesAdapter(
 
         private fun extractText(msg: TdApi.Message): String {
             val c = msg.content ?: return ""
-            return when (c) {
-                is TdApi.MessageText -> c.text?.text ?: ""
-                is TdApi.MessageCaption -> c.caption?.text ?: ""
-                else -> c.javaClass.simpleName
+            return if (c is TdApi.MessageText) {
+                c.text?.text ?: ""
+            } else {
+                c.javaClass.simpleName
             }
         }
     }
