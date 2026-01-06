@@ -1,131 +1,115 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:padding="10dp">
+    android:layout_height="match_parent">
 
-    <FrameLayout
-        android:id="@+id/previewFrame"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginEnd="10dp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/rightPanel"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
-
-        <ImageView
-            android:id="@+id/ivPreview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:adjustViewBounds="true"
-            android:scaleType="fitCenter"
-            android:contentDescription="@null"/>
-
-        <ImageView
-            android:id="@+id/ivWatermarkOverlay"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:visibility="gone"
-            android:contentDescription="@null"/>
-
-        <com.pasiflonet.mobile.ui.BlurOverlayView
-            android:id="@+id/blurOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"/>
-    </FrameLayout>
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbarDetails"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="עריכת וידאו"
+        app:navigationIcon="@android:drawable/ic_menu_close_clear_cancel"/>
 
     <LinearLayout
-        android:id="@+id/rightPanel"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?attr/actionBarSize"
         android:orientation="vertical"
-        app:layout_constraintStart_toEndOf="@id/previewFrame"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
+        android:padding="12dp">
 
-        <TextView
-            android:id="@+id/tvMeta"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:alpha="0.85"
-            android:paddingBottom="8dp"/>
-
-        <com.google.android.material.textfield.TextInputLayout
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etCaption"
+            <VideoView
+                android:id="@+id/videoView"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="top|start"
-                android:inputType="textMultiLine"
-                android:minLines="6"
-                android:textSize="16sp"
-                android:hint="טקסט / כיתוב"/>
-        </com.google.android.material.textfield.TextInputLayout>
+                android:layout_height="match_parent" />
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/swSendWithMedia"
+            <com.pasiflonet.mobile.ui.editor.OverlayEditorView
+                android:id="@+id/overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </FrameLayout>
+
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="שלח עם מדיה (אם קיימת)"
-            android:checked="true"/>
+            app:cardCornerRadius="18dp"
+            app:cardUseCompatPadding="true"
+            android:layout_marginTop="10dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="8dp">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnWatermark"
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="סימן מים"/>
+                android:padding="12dp"
+                android:orientation="vertical">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnBlur"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="טשטוש"/>
-        </LinearLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etWatermarkText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="טקסט ווטרמרק (אופציונלי)"/>
+                </com.google.android.material.textfield.TextInputLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnTranslate"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="תרגם (בתוך האפליקציה)"/>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBlurMode"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="מצב טשטוש"/>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSend"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="שלח"/>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUndo"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="בטל מלבן"/>
+                </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnClose"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="סגור"/>
-        </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnExport"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="ייצא וידאו ערוך"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSend"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="שלח לערוץ"/>
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvDetailsStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="סטטוס: מוכן"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

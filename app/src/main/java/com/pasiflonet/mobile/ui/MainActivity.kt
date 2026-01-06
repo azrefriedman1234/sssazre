@@ -1,128 +1,58 @@
 package com.pasiflonet.mobile.ui
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.Toast
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
 import com.pasiflonet.mobile.R
-import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.util.TempCleaner
-import org.drinkless.tdlib.TdApi
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var adapter: MessagesAdapter
-    private val liveMsgs = ArrayList<TdApi.Message>(200)
+    private lateinit var etTargetChannel: TextInputEditText
+    private lateinit var tvStatus: TextView
+    private lateinit var tvLog: TextView
+
+    private val pickVideo = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            val target = etTargetChannel.text?.toString()?.trim().orEmpty()
+            val i = Intent(this, DetailsActivity::class.java)
+                .putExtra(DetailsActivity.EXTRA_TARGET_CHANNEL, target)
+                .putExtra(DetailsActivity.EXTRA_INPUT_URI, uri.toString())
+            startActivity(i)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        adapter = MessagesAdapter { msg ->
-            val i = Intent(this, DetailsActivity::class.java).apply {
-                putExtra("chat_id", msg.chatId)
-                putExtra("message_id", msg.id)
-                putExtra("initial_text", extractTextForDetails(msg))
-            }
-            startActivity(i)
-        }
-
-        val rv = findFirstRecyclerView(window.decorView)
-        if (rv != null) {
-            rv.layoutManager = LinearLayoutManager(this)
-            rv.adapter = adapter
-        } else {
-            Toast.makeText(this, "RecyclerView לא נמצא בלייאאוט", Toast.LENGTH_SHORT).show()
-        }
-
-        hookButtons()
-        installTdUpdates()
-    }
-
-    // ממלא תיבת הטקסט במסך פרטים
-    private fun extractTextForDetails(msg: TdApi.Message): String {
-        val c = msg.content ?: return ""
-        return if (c is TdApi.MessageText) {
-            c.text?.text ?: ""
-        } else {
-            ""
-        }
-    }
-
-    private fun hookButtons() {
-        // כפתור הגדרות
-        findButtonByIdOrName("btn_settings", "btnSettings")?.setOnClickListener {
-            try {
-                startActivity(Intent(this, SettingsActivity::class.java))
-            } catch (t: Throwable) {
-                Toast.makeText(this, "SettingsActivity לא נמצא: ${t.message}", Toast.LENGTH_LONG).show()
+        findViewById<MaterialToolbar>(R.id.toolbar).setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.menu_settings -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
+                R.id.menu_exit -> { finishAffinity(); true }
+                else -> false
             }
         }
 
-        // כפתור יציאה / סגירה
-        findButtonByIdOrName("btn_exit", "btnExit", "btn_close", "btnClose")?.setOnClickListener {
-            finishAffinity()
+        etTargetChannel = findViewById(R.id.etTargetChannel)
+        tvStatus = findViewById(R.id.tvStatus)
+        tvLog = findViewById(R.id.tvLog)
+
+        findViewById<MaterialButton>(R.id.btnPickVideo).setOnClickListener {
+            pickVideo.launch("video/*")
         }
 
-        // כפתור ניקוי קבצים זמניים (רק cacheDir/pasiflonet_tmp)
-        findButtonByIdOrName("btn_clear_temp", "btnClearTemp")?.setOnClickListener {
-            val n = TempCleaner.clearTemp(this)
-            Toast.makeText(this, "נמחקו $n קבצים זמניים", Toast.LENGTH_SHORT).show()
+        findViewById<MaterialButton>(R.id.btnClearTemp).setOnClickListener {
+            val (count, bytes) = TempCleaner.clearPasiflonetTmp(this)
+            tvLog.text = "נוקו $count פריטים (${bytes/1024}KB) מתוך cacheDir/pasiflonet_tmp"
         }
-    }
 
-    // לייב הודעות מה-TDLib
-    private fun installTdUpdates() {
-        TdLibManager.addUpdatesHandler { obj ->
-            if (obj is TdApi.UpdateNewMessage) {
-                val m = obj.message ?: return@addUpdatesHandler
-                runOnUiThread {
-                    liveMsgs.add(0, m)
-                    while (liveMsgs.size > 120) liveMsgs.removeAt(liveMsgs.size - 1)
-                    adapter.submit(liveMsgs)
-                }
-            }
-        }
-    }
-
-    private fun findButtonByIdOrName(vararg names: String): Button? {
-        for (name in names) {
-            val id = resources.getIdentifier(name, "id", packageName)
-            if (id != 0) {
-                val v = findViewById<View>(id)
-                if (v is Button) return v
-            }
-        }
-        // fallback – אם אין ID מתאים, נחפש כפתור ראשון בעץ
-        return findFirstButton(window.decorView)
-    }
-
-    private fun findFirstRecyclerView(root: View?): RecyclerView? {
-        if (root == null) return null
-        if (root is RecyclerView) return root
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val r = findFirstRecyclerView(root.getChildAt(i))
-                if (r != null) return r
-            }
-        }
-        return null
-    }
-
-    private fun findFirstButton(root: View?): Button? {
-        if (root == null) return null
-        if (root is Button) return root
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val b = findFirstButton(root.getChildAt(i))
-                if (b != null) return b
-            }
-        }
-        return null
+        tvStatus.text = "סטטוס: בחר וידאו כדי להתחיל"
     }
 }
